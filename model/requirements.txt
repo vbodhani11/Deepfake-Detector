@@ -1,0 +1,28 @@
+# Core ML Dependencies
+tensorflow==2.18.0
+numpy>=1.26.0
+opencv-python==4.10.0.84
+pillow==10.4.0
+scikit-learn
+joblib==1.5.0
+
+# Media Processing
+imageio==2.36.0
+moviepy==1.0.3
+
+# Utilities
+matplotlib
+seaborn
+pandas
+
+# Jupyter for development
+jupyter
+ipykernel
+
+# Model serving (optional)
+flask==3.1.0
+gunicorn==23.0.0
+
+# Configuration
+python-dotenv==1.0.1
+pydantic==2.10.6

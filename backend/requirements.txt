@@ -1,0 +1,26 @@
+# Core FastAPI dependencies
+fastapi==0.115.11
+uvicorn==0.34.0
+sqlmodel==0.0.24
+pydantic[email]==2.10.6
+pydantic-settings==2.8.1
+
+# Database
+psycopg==3.2.6
+psycopg2-binary==2.9.10
+alembic==1.15.1
+SQLAlchemy==2.0.39
+
+# Authentication & Security
+PyJWT==2.10.1
+passlib[bcrypt]==1.7.4
+python-multipart==0.0.20
+
+# Environment & Configuration
+python-dotenv==1.0.1
+
+# Testing
+pytest==8.3.5
+
+# Optional: Monitoring
+sentry_sdk==2.24.0
