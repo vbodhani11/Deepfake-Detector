@@ -290,3 +290,6 @@ Thumbs.db
 # PowerPoint files (if you don't want to track them)
 *.pptx
 *.ppt
+
+# Dependency directories
+node_modules/
