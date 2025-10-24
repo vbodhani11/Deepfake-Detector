@@ -292,9 +292,8 @@ Thumbs.db
 *.ppt
 
 # Dependency directories
-node_modules
-UI/node_modules
-UI
+node_modules/
+UI/node_modules/
 # UI-specific ignores (Node.js/React/Vite)
 # Local .env files
 *.local
