@@ -1,0 +1,138 @@
+/* Custom CSS for Deepfake Detector */
+
+/* Import Google Fonts */
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Audiowide&display=swap');
+
+/* Global font override for futuristic look */
+.deepfake-app {
+  font-family: 'Orbitron', sans-serif;
+}
+
+/* Text shadow utilities */
+.text-shadow-lg {
+  text-shadow: 0 0 20px currentColor;
+}
+
+.text-shadow-blue-400 {
+  text-shadow: 0 0 15px rgba(96, 165, 250, 0.8);
+}
+
+/* Glowing effects */
+.glow-blue {
+  box-shadow: 0 0 20px rgba(88, 166, 255, 0.6);
+}
+
+.glow-blue-intense {
+  box-shadow: 0 0 30px rgba(88, 166, 255, 0.9);
+}
+
+/* Pulsing animation for headers */
+.pulse-glow {
+  animation: pulseGlow 3s infinite ease-in-out;
+}
+
+@keyframes pulseGlow {
+  0%,
+  100% {
+    text-shadow: 0 0 15px rgba(88, 166, 255, 0.8);
+    transform: scale(1);
+  }
+  50% {
+    text-shadow: 0 0 25px rgba(88, 166, 255, 1);
+    transform: scale(1.02);
+  }
+}
+
+/* Skewed button effect */
+.btn-skew::before {
+  content: '';
+  background: #000;
+  position: absolute;
+  top: 0;
+  left: -10%;
+  width: 120%;
+  height: 100%;
+  transform: skew(30deg);
+  transition: transform 0.4s cubic-bezier(0.3, 1, 0.8, 1);
+}
+
+.btn-skew:hover::before {
+  transform: translate3d(100%, 0, 0);
+}
+
+/* Particle container styling */
+#particles-js {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 0;
+  pointer-events: none;
+}
+
+/* Animated background gradients */
+.bg-animated {
+  background: linear-gradient(-45deg, #06090e, #0d1117, #161b22, #21262d);
+  background-size: 400% 400%;
+  animation: gradientShift 15s ease infinite;
+}
+
+@keyframes gradientShift {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+/* Hover effects for feature cards */
+.feature-card-hover {
+  transition: all 0.3s ease;
+  will-change: transform, box-shadow;
+}
+
+.feature-card-hover:hover {
+  transform: scale(1.05) translateY(-5px);
+  box-shadow: 0 20px 40px rgba(88, 166, 255, 0.3);
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .text-6xl {
+    font-size: 3rem;
+  }
+
+  .text-5xl {
+    font-size: 2.5rem;
+  }
+
+  .text-4xl {
+    font-size: 2rem;
+  }
+}
+
+/* Progress bar animation */
+.progress-animated {
+  background: linear-gradient(
+    90deg,
+    rgba(8, 135, 232, 0.8) 0%,
+    rgba(92, 225, 230, 0.8) 50%,
+    rgba(8, 135, 232, 0.8) 100%
+  );
+  background-size: 200% 100%;
+  animation: progressShimmer 2s linear infinite;
+}
+
+@keyframes progressShimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
