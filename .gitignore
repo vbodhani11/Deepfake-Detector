@@ -250,7 +250,7 @@ static/media/
 
 # Data directories (usually large datasets)
 model/data/
-model/models/
+#model/models/
 data/
 
 # Logs
