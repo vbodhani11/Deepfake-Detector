@@ -15,12 +15,20 @@ class DetectionResponse(BaseEntity):
     user_id: Optional[str] = None
     media_type: MediaType
     file_name: str
-    file_path: str
+    file_path: Optional[str] = None
     file_size: int
     status: DetectionStatus
     result: Optional[DetectionResult] = None
     confidence_score: Optional[float] = None
+    average_fake_probability: Optional[float] = None
+    fake_ratio: Optional[float] = None
+    total_frames_processed: Optional[int] = None
+    fake_frames: Optional[int] = None
+    real_frames: Optional[int] = None
+    fps_used: Optional[int] = None
+    threshold_used: Optional[float] = None
     processing_time_seconds: Optional[float] = None
+    frame_predictions: Optional[dict] = None
     error_message: Optional[str] = None
 
 class DetectionUpdate(BaseModel):
@@ -28,7 +36,15 @@ class DetectionUpdate(BaseModel):
     status: Optional[DetectionStatus] = None
     result: Optional[DetectionResult] = None
     confidence_score: Optional[float] = None
+    average_fake_probability: Optional[float] = None
+    fake_ratio: Optional[float] = None
+    total_frames_processed: Optional[int] = None
+    fake_frames: Optional[int] = None
+    real_frames: Optional[int] = None
+    fps_used: Optional[int] = None
+    threshold_used: Optional[float] = None
     processing_time_seconds: Optional[float] = None
+    frame_predictions: Optional[dict] = None
     error_message: Optional[str] = None
 
 class DetectionListResponse(BaseModel):

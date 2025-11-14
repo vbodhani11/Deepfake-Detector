@@ -30,7 +30,7 @@ class Settings(BaseSettings):
     # CORS
     BACKEND_CORS_ORIGINS: str = "http://localhost:3000,http://localhost:8000"
 
-    @computed_field
+    @computed_field(return_type=list[str])
     @property
     def all_cors_origins(self) -> list[str]:
         return [origin.strip() for origin in self.BACKEND_CORS_ORIGINS.split(",")]
@@ -42,9 +42,9 @@ class Settings(BaseSettings):
     POSTGRES_PASSWORD: str = "changethis"
     POSTGRES_DB: str = "deepfake_detector"
 
-    @computed_field
+    @computed_field(return_type=MultiHostUrl)
     @property
-    def SQLALCHEMY_DATABASE_URI(self):
+    def SQLALCHEMY_DATABASE_URI(self) -> MultiHostUrl:
         return MultiHostUrl.build(
             scheme="postgresql+psycopg2",
             username=self.POSTGRES_USER,
@@ -60,5 +60,12 @@ class Settings(BaseSettings):
 
     # File Upload Configuration
     MAX_FILE_SIZE_MB: int = 50
+    ALLOWED_VIDEO_EXTENSIONS: list[str] = [".mp4", ".avi", ".mov", ".mkv"]
+    ALLOWED_IMAGE_EXTENSIONS: list[str] = [".jpg", ".jpeg", ".png", ".bmp"]
+
+    # ML Model Configuration
+    MODEL_PATH: str = "model/models/xception_best.pt"
+    DEFAULT_FPS: int = 3
+    DEFAULT_THRESHOLD: float = 0.5
 
 settings = Settings()
