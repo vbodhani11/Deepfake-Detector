@@ -17,7 +17,15 @@ model_src_path = Path(__file__).parent.parent.parent.parent / "model" / "src"
 if str(model_src_path) not in sys.path:
     sys.path.insert(0, str(model_src_path))
 
-from deepfake_detector import DeepfakeDetectorPipeline
+# Try to import the ML pipeline, but allow server to start without it
+try:
+    from deepfake_detector import DeepfakeDetectorPipeline
+    ML_MODEL_AVAILABLE = True
+except ImportError as e:
+    DeepfakeDetectorPipeline = None
+    ML_MODEL_AVAILABLE = False
+    print(f"Warning: ML model dependencies not available: {e}")
+    print("Server will start but detection features will be limited.")
 
 
 class DetectionService:
@@ -25,8 +33,11 @@ class DetectionService:
         self.repository = repository
         self.pipeline = None
     
-    def _get_pipeline(self) -> DeepfakeDetectorPipeline:
+    def _get_pipeline(self) -> Optional[DeepfakeDetectorPipeline]:
         """Get or initialize pipeline (singleton pattern)"""
+        if not ML_MODEL_AVAILABLE:
+            raise ImportError("ML model dependencies are not available. Please install opencv-python and other ML dependencies.")
+        
         if self.pipeline is None:
             model_path = Path(settings.MODEL_PATH)
             if not model_path.is_absolute():
