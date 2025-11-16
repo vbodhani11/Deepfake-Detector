@@ -24,7 +24,35 @@ def get_db() -> Generator[Session, None, None]:
     with Session(engine) as session:
         yield session
 
+# Optional database session that handles connection errors gracefully
+def get_db_optional() -> Generator[Session | None, None, None]:
+    """
+    Dependency to get the database session, returns None if connection fails.
+    """
+    session = None
+    try:
+        # Try to create a session - this will fail if DB is not available
+        session = Session(engine)
+        # Test the connection
+        session.connection()
+        yield session
+    except Exception:
+        # Database not available - return None
+        if session:
+            try:
+                session.close()
+            except Exception:
+                pass
+        yield None
+    finally:
+        if session:
+            try:
+                session.close()
+            except Exception:
+                pass
+
 SessionDep = Annotated[Session, Depends(get_db)]
+OptionalSessionDep = Annotated[Session | None, Depends(get_db_optional)]
 TokenDep = Annotated[str, Depends(reusable_oauth2)]
 
 # Dependency to get the current user from the token
