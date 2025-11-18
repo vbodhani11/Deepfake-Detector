@@ -5,6 +5,7 @@ interface FuturisticButtonProps {
   children: React.ReactNode;
   variant?: 'primary' | 'secondary';
   className?: string;
+  disabled?: boolean;
 }
 
 const FuturisticButton: React.FC<FuturisticButtonProps> = ({
@@ -12,11 +13,12 @@ const FuturisticButton: React.FC<FuturisticButtonProps> = ({
   children,
   variant = 'primary',
   className = '',
+  disabled = false,
 }) => {
   const baseClasses = `
     relative font-semibold text-lg rounded-xl cursor-pointer border-none
     text-white overflow-hidden mt-5 transition-transform duration-300
-    hover:scale-95 active:scale-95
+    hover:scale-95 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed
   `;
 
   const variantClasses =
@@ -25,7 +27,12 @@ const FuturisticButton: React.FC<FuturisticButtonProps> = ({
       : 'bg-gradient-to-r from-orange-500 to-red-500';
 
   return (
-    <button className={`${baseClasses} ${variantClasses} ${className} btn-skew`} onClick={onClick}>
+    <button
+      className={`${baseClasses} ${variantClasses} ${className} btn-skew`}
+      onClick={disabled ? undefined : onClick}
+      disabled={disabled}
+      aria-busy={disabled}
+    >
       <span className='relative z-10 flex items-center px-4 py-3 transition-colors duration-400'>{children}</span>
     </button>
   );

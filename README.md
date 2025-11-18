@@ -38,34 +38,61 @@ The backend follows a clean architecture pattern inspired by domain-driven desig
 
 ### Quick Start
 
+**⚠️ Python Version Requirement:** This project requires Python 3.11 or 3.12 (not 3.13+) due to MediaPipe compatibility. If you have Python 3.13, use Python 3.12 instead:
+- macOS (Homebrew): Use `/opt/homebrew/bin/python3.12 -m venv venv`
+- Or install Python 3.12: `brew install python@3.12`
+
 1. **Clone and navigate:**
    ```bash
    cd backend/
    ```
 
-2. **Install dependencies:**
+2. **Create and activate virtual environment:**
+   ```bash
+   # Create virtual environment with Python 3.11 or 3.12
+   # Option 1: If python3.12 is in your PATH:
+   python3.12 -m venv venv
+   
+   # Option 2: If using Homebrew on macOS:
+   /opt/homebrew/bin/python3.12 -m venv venv
+   
+   # Option 3: If you only have python3 (check version first):
+   python3 --version  # Should be 3.11 or 3.12
+   python3 -m venv venv
+   
+   # Activate virtual environment
+   # On macOS/Linux:
+   source venv/bin/activate
+   # On Windows:
+   # venv\Scripts\activate
+   ```
+
+3. **Install dependencies:**
    ```bash
    pip install -r requirements.txt
    ```
+   
+   **Note:** This will install both FastAPI dependencies and ML dependencies (opencv-python, torch, timm, mediapipe, etc.) required for deepfake detection.
 
-3. **Set up environment:**
+4. **Set up environment:**
    ```bash
    cp env.example .env
    # Edit .env with your configuration
    ```
 
-4. **Run with Docker:**
+5. **Run with Docker:**
    ```bash
    docker-compose up -d
    ```
 
-5. **Or run locally:**
+6. **Or run locally:**
    ```bash
+   # Make sure virtual environment is activated
    # Start PostgreSQL database first
    uvicorn app.main:app --reload
    ```
 
-6. **Run tests:**
+7. **Run tests:**
    ```bash
    pytest
    ```
@@ -97,10 +124,19 @@ model/
 
 ### Model Integration
 
-The backend is designed to integrate with ML models through the service layer. Detection results are stored with:
+The backend integrates with the ML model through the `DeepfakeDetectorPipeline` service layer. Videos are processed synchronously during upload (similar to the Streamlit app) and results are returned immediately.
 
+**Detection Pipeline:**
+- Uses Xception model for deepfake detection
+- MediaPipe for face detection
+- Processes videos frame-by-frame at configurable FPS
+- Returns real-time results with confidence scores
+
+**Detection results include:**
 - Confidence scores
 - Processing time
+- Frame-by-frame predictions
+- Video-level prediction (real/fake/uncertain)
 - Model version tracking
 - Metadata storage
 
@@ -146,10 +182,17 @@ docker-compose up -d
 
 ### Manual Deployment
 
-1. Set up PostgreSQL database
-2. Configure environment variables
-3. Run database migrations: `alembic upgrade head`
-4. Start the application: `uvicorn app.main:app --host 0.0.0.0 --port 8000`
+1. Create and activate virtual environment (use Python 3.11 or 3.12):
+   ```bash
+   python3.12 -m venv venv  # or python3.11
+   source venv/bin/activate  # On Windows: venv\Scripts\activate
+   ```
+2. Install dependencies: `pip install -r requirements.txt`
+   - This includes ML dependencies (opencv-python, torch, mediapipe, etc.)
+3. Set up PostgreSQL database
+4. Configure environment variables
+5. Run database migrations: `alembic upgrade head`
+6. Start the application: `uvicorn app.main:app --host 0.0.0.0 --port 8000`
 
 ## Contributing
 

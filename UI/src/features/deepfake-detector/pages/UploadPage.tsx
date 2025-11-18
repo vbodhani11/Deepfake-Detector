@@ -4,6 +4,7 @@ import ParticlesBackground from '../components/ParticlesBackground';
 import FuturisticButton from '../components/FuturisticButton';
 import FileUpload from '../components/FileUpload';
 import ProgressBar from '../components/ProgressBar';
+import { uploadDetection } from '../api/detection';
 
 interface UploadedFile {
   file: File;
@@ -16,25 +17,9 @@ const UploadPage: React.FC = () => {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadStatus, setUploadStatus] = useState('');
   const [isUploading, setIsUploading] = useState(false);
+  const [isUploadingToServer, setIsUploadingToServer] = useState(false);
   const [uploadComplete, setUploadComplete] = useState(false);
-
-  const handleFileSelect = (file: File) => {
-    setUploadedFile({ file });
-    setIsUploading(true);
-    setUploadComplete(false);
-
-    // Generate preview for images
-    if (file.type.startsWith('image/')) {
-      const reader = new FileReader();
-      reader.onload = e => {
-        setUploadedFile(prev => (prev ? { ...prev, preview: e.target?.result as string } : null));
-      };
-      reader.readAsDataURL(file);
-    }
-
-    // Simulate upload progress
-    simulateUploadProgress(file);
-  };
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const simulateUploadProgress = (file: File) => {
     let progress = 0;
@@ -54,6 +39,27 @@ const UploadPage: React.FC = () => {
     }, 200);
   };
 
+  const handleFileSelect = (file: File) => {
+    setUploadedFile({ file });
+    setIsUploading(true);
+    setUploadComplete(false);
+    setUploadProgress(0);
+    setUploadStatus('');
+    setErrorMessage(null);
+
+    // Generate preview for images
+    if (file.type.startsWith('image/')) {
+      const reader = new FileReader();
+      reader.onload = e => {
+        setUploadedFile(prev => (prev ? { ...prev, preview: e.target?.result as string } : null));
+      };
+      reader.readAsDataURL(file);
+    }
+
+    // Simulate upload progress
+    simulateUploadProgress(file);
+  };
+
   const formatFileSize = (bytes: number) => {
     if (bytes === 0) return '0 Bytes';
     const k = 1024;
@@ -62,9 +68,52 @@ const UploadPage: React.FC = () => {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
 
-  const handleCheckDeepfake = () => {
-    // Navigate to analysis/results page
-    navigate('/analysis', { state: { file: uploadedFile?.file } });
+  const handleCheckDeepfake = async () => {
+    if (!uploadedFile) {
+      return;
+    }
+
+    setErrorMessage(null);
+    setIsUploadingToServer(true);
+    setUploadComplete(false);
+    setUploadStatus(`Uploading to server: ${uploadedFile.file.name} (${formatFileSize(uploadedFile.file.size)})`);
+    setUploadProgress(0);
+
+    try {
+      const detection = await uploadDetection(uploadedFile.file, {
+        onProgress: progress => setUploadProgress(progress),
+      });
+
+      setUploadProgress(100);
+      setUploadStatus('Upload complete! Redirecting to analysis...');
+      setUploadComplete(true);
+
+      // Clear file from memory after successful upload
+      const detectionId = detection.id;
+      const fileName = detection.file_name ?? uploadedFile.file.name;
+      const initialDetection = detection;
+      
+      // Clear the uploaded file from state
+      setUploadedFile(null);
+      setUploadProgress(0);
+      setUploadStatus('');
+
+      navigate('/analysis', {
+        state: {
+          detectionId,
+          fileName,
+          initialDetection,
+        },
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to upload file';
+      setErrorMessage(message);
+      setUploadStatus('Upload failed. Please try again.');
+      setUploadProgress(0);
+      setUploadComplete(false);
+    } finally {
+      setIsUploadingToServer(false);
+    }
   };
 
   return (
@@ -97,12 +146,20 @@ const UploadPage: React.FC = () => {
               )}
 
               {/* Progress Bar */}
-              {isUploading && <ProgressBar progress={uploadProgress} status={uploadStatus} className='mb-6' />}
+              {(isUploading || isUploadingToServer || uploadComplete) && (
+                <ProgressBar progress={uploadProgress} status={uploadStatus} className='mb-6' />
+              )}
 
               {/* Upload Complete Status */}
               {uploadComplete && (
                 <div className='text-green-400 mb-6'>
                   <p className='text-lg font-semibold'>✅ {uploadStatus}</p>
+                </div>
+              )}
+
+              {errorMessage && (
+                <div className='text-red-400 mb-4'>
+                  <p className='text-lg font-semibold'>⚠️ {errorMessage}</p>
                 </div>
               )}
             </div>
@@ -130,8 +187,8 @@ const UploadPage: React.FC = () => {
             Back to Home
           </FuturisticButton>
 
-          {uploadComplete && (
-            <FuturisticButton variant='secondary' onClick={handleCheckDeepfake}>
+          {uploadedFile && (
+            <FuturisticButton variant='secondary' onClick={handleCheckDeepfake} disabled={isUploadingToServer}>
               <svg
                 xmlns='http://www.w3.org/2000/svg'
                 width='24'
@@ -147,7 +204,7 @@ const UploadPage: React.FC = () => {
                 <path d='M22 11.08V12a10 10 0 1 1-5.93-9.14'></path>
                 <polyline points='22 4 12 14.01 9 11.01'></polyline>
               </svg>
-              Check Deepfake
+              {isUploadingToServer ? 'Uploading...' : 'Check Deepfake'}
             </FuturisticButton>
           )}
         </div>

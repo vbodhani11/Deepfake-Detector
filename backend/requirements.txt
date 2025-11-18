@@ -24,3 +24,13 @@ pytest==8.3.5
 
 # Optional: Monitoring
 sentry_sdk==2.24.0
+
+# ML Dependencies for Deepfake Detection
+# Note: MediaPipe requires Python 3.8-3.12 (not 3.13+)
+# If using Python 3.13, you may need to use Python 3.11 or 3.12 instead
+opencv-python==4.10.0.84
+torch>=2.0.0
+timm>=0.9.0
+mediapipe>=0.10.0; python_version<"3.13"
+pillow==10.4.0
+numpy>=1.26.0
