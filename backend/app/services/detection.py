@@ -29,7 +29,7 @@ except ImportError as e:
 
 
 class DetectionService:
-    def __init__(self, repository: DetectionRepository):
+    def __init__(self, repository: Optional[DetectionRepository] = None):
         self.repository = repository
         self.pipeline = None
     

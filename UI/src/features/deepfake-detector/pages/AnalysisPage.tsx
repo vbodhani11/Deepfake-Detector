@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import ParticlesBackground from '../components/ParticlesBackground';
 import FuturisticButton from '../components/FuturisticButton';
 import ProgressBar from '../components/ProgressBar';
+import { DetectionRecord, DetectionStatus, fetchDetectionById } from '../api/detection';
 
 interface AnalysisResult {
   isDeepfake: boolean;
@@ -11,79 +12,125 @@ interface AnalysisResult {
 }
 
 interface LocationState {
-  file?: File;
+  detectionId?: string;
+  fileName?: string;
+  initialDetection?: DetectionRecord;
 }
 
 const AnalysisPage: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const locationState = location.state as LocationState;
-  const uploadedFile = locationState?.file;
+  const detectionId = locationState?.detectionId;
+  const initialDetection = locationState?.initialDetection;
+  const uploadedFileName = locationState?.fileName || initialDetection?.file_name;
 
   const [isAnalyzing, setIsAnalyzing] = useState(true);
   const [analysisProgress, setAnalysisProgress] = useState(0);
   const [analysisStatus, setAnalysisStatus] = useState('Initializing analysis...');
   const [result, setResult] = useState<AnalysisResult | null>(null);
+  const [detection, setDetection] = useState<DetectionRecord | null>(initialDetection ?? null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!uploadedFile) {
+    if (!detectionId) {
       navigate('/upload');
       return;
     }
 
-    // Simulate analysis process
-    simulateAnalysis();
-  }, [uploadedFile, navigate]);
+    let pollTimeout: number | undefined;
+    let isActive = true;
 
-  const simulateAnalysis = () => {
-    const stages = [
-      'Initializing analysis...',
-      'Loading AI models...',
-      'Processing frames...',
-      'Detecting facial features...',
-      'Analyzing temporal consistency...',
-      'Running deepfake detection...',
-      'Generating confidence scores...',
-      'Finalizing results...',
-    ];
+    const statusMessages: Record<DetectionStatus, string> = {
+      pending: 'Waiting for the detection pipeline to start...',
+      processing: 'Running deepfake detection models...',
+      completed: 'Analysis complete!',
+      failed: 'Analysis failed',
+    };
 
-    let currentStage = 0;
-    let progress = 0;
-
-    const interval = setInterval(() => {
-      progress += Math.random() * 10 + 5;
-
-      if (progress >= 100) {
-        progress = 100;
-        clearInterval(interval);
-        setAnalysisProgress(100);
-        setAnalysisStatus('Analysis complete!');
-        setIsAnalyzing(false);
-
-        // Generate mock results
-        const mockResult: AnalysisResult = {
-          isDeepfake: Math.random() > 0.5,
-          confidence: Math.random() * 40 + 60, // 60-100%
-          details: [
-            'Facial landmark analysis completed',
-            'Temporal consistency check passed',
-            'Pixel-level artifacts detected',
-            'Neural network confidence calculated',
-          ],
-        };
-        setResult(mockResult);
-      } else {
-        const stageIndex = Math.floor((progress / 100) * stages.length);
-        if (stageIndex !== currentStage && stageIndex < stages.length) {
-          currentStage = stageIndex;
-          setAnalysisStatus(stages[stageIndex]);
-        }
-        setAnalysisProgress(progress);
+    const buildResultFromDetection = (record: DetectionRecord): AnalysisResult | null => {
+      if (record.status !== 'completed' || !record.result) {
+        return null;
       }
-    }, 500);
-  };
 
-  if (!uploadedFile) {
+      const confidence = record.confidence_score ?? 0;
+      const normalizedConfidence = confidence > 1 ? confidence : confidence * 100;
+
+      const details = [
+        `Media type analyzed: ${record.media_type.toUpperCase()}`,
+        record.processing_time_seconds ? `Processing time: ${record.processing_time_seconds.toFixed(2)} seconds` : null,
+        'Inference completed using the latest detection pipeline',
+      ].filter(Boolean) as string[];
+
+      return {
+        isDeepfake: record.result === 'fake',
+        confidence: Math.min(100, Math.max(0, normalizedConfidence)),
+        details,
+      };
+    };
+
+    const updateDetectionState = (record: DetectionRecord) => {
+      if (!isActive) {
+        return;
+      }
+      setErrorMessage(null);
+      setDetection(record);
+
+      if (record.status === 'completed') {
+        const completedResult = buildResultFromDetection(record);
+        setResult(completedResult);
+        setAnalysisStatus(statusMessages.completed);
+        setAnalysisProgress(100);
+        setIsAnalyzing(false);
+      } else if (record.status === 'failed') {
+        setResult(null);
+        setAnalysisStatus(record.error_message || statusMessages.failed);
+        setAnalysisProgress(prev => (prev < 90 ? prev : 90));
+        setIsAnalyzing(false);
+      } else {
+        setResult(null);
+        setAnalysisStatus(statusMessages[record.status]);
+        setAnalysisProgress(prev => Math.min(prev + 10, 90));
+        setIsAnalyzing(true);
+      }
+    };
+
+    const pollDetection = async () => {
+      try {
+        const latest = await fetchDetectionById(detectionId);
+        updateDetectionState(latest);
+
+        if (latest.status === 'pending' || latest.status === 'processing') {
+          pollTimeout = window.setTimeout(pollDetection, 4000);
+        }
+      } catch (error) {
+        if (!isActive) {
+          return;
+        }
+        const message = error instanceof Error ? error.message : 'Failed to fetch detection status';
+        setErrorMessage(message);
+        setIsAnalyzing(false);
+        }
+    };
+
+    if (initialDetection) {
+      updateDetectionState(initialDetection);
+      if (initialDetection.status === 'pending' || initialDetection.status === 'processing') {
+        pollTimeout = window.setTimeout(pollDetection, 4000);
+      }
+    } else {
+      pollDetection();
+    }
+
+    return () => {
+      isActive = false;
+      if (pollTimeout) {
+        clearTimeout(pollTimeout);
+      }
+    };
+  }, [detectionId, initialDetection, navigate]);
+
+  if (!detectionId) {
     return null;
   }
 
@@ -94,16 +141,35 @@ const AnalysisPage: React.FC = () => {
       <div className='relative z-10 text-center px-4 py-8'>
         {/* Header */}
         <h1 className='text-5xl font-bold text-blue-400 uppercase tracking-wide mb-4 mt-8'>DeepFake Analysis</h1>
-        <p className='text-xl text-gray-400 mb-12'>Analyzing your file: {uploadedFile.name}</p>
+        <p className='text-xl text-gray-400 mb-4'>Analyzing your file: {uploadedFileName || 'Selected media'}</p>
+        {detection && (
+          <p className='text-sm text-gray-500 mb-8'>
+            Detection ID: <span className='font-mono text-gray-400'>{detection.id}</span>
+          </p>
+        )}
 
         {/* Analysis Section */}
         <div className='max-w-4xl mx-auto mb-12'>
           <div className='bg-gray-800 bg-opacity-60 rounded-xl p-8 backdrop-blur-sm'>
+            {errorMessage && (
+              <div className='text-red-400 mb-4'>
+                <p className='text-lg font-semibold'>⚠️ {errorMessage}</p>
+              </div>
+            )}
             {isAnalyzing ? (
               <div>
                 <div className='text-6xl mb-6'>🔍</div>
                 <ProgressBar progress={analysisProgress} status={analysisStatus} className='mb-6' />
                 <p className='text-gray-400'>Please wait while we analyze your file for deepfake content...</p>
+              </div>
+            ) : detection && detection.status === 'failed' ? (
+              <div>
+                <div className='text-6xl mb-6'>❌</div>
+                <h2 className='text-3xl font-bold text-red-400 mb-4'>Analysis Failed</h2>
+                <p className='text-gray-400 mb-4'>
+                  {detection.error_message || 'An unexpected error occurred during analysis.'}
+                </p>
+                <p className='text-gray-500'>Please try uploading the file again or contact support if the issue persists.</p>
               </div>
             ) : result ? (
               <div>

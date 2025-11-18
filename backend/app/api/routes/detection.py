@@ -5,7 +5,7 @@ from typing import Any, Optional
 
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Query
 
-from app.api.deps import CurrentUser, SessionDep, OptionalSessionDep
+from app.api.deps import CurrentUser, SessionDep, OptionalSessionDep, OptionalUser
 from app.models.entities.detection import (
     DetectionRequest,
     DetectionResponse,
@@ -199,14 +199,13 @@ async def analyze_video(
 @router.post("/upload", response_model=DetectionResponse)
 async def upload_media_for_detection(
     *,
-    session: SessionDep,
-    current_user: CurrentUser,
     file: UploadFile = File(...),
     media_type: MediaType = Form(...),
     description: Optional[str] = Form(None),
 ) -> Any:
     """
-    Upload media file for deepfake detection (authenticated).
+    Upload media file for deepfake detection (public endpoint, no authentication required).
+    Detection is not stored in database - only stored when user logs in after detection.
     """
     try:
         # Validate file size
@@ -233,24 +232,79 @@ async def upload_media_for_detection(
                 f"File extension '{file_extension}' not allowed for {media_type.value} files"
             )
 
-        file_path = f"uploads/{current_user.id}/{file.filename}"
+        # Store file on disk
+        from datetime import datetime
+        import uuid
+        from pathlib import Path
+        
         file_size = file.size or 0
-
-        detection_create = DetectionCreate(
-            user_id=current_user.id,
-            media_type=media_type,
-            file_name=file.filename or "unknown",
-            file_path=file_path,
-            file_size=file_size,
-            status=DetectionStatus.PENDING,
-        )
-
-        detection_service = DetectionService(
-            repository=DetectionRepository(session)
-        )
-        detection = detection_service.create_detection(detection_create)
-
-        return DetectionResponse(**detection.model_dump())
+        detection_id = uuid.uuid4()
+        
+        # Create uploads directory structure
+        uploads_dir = Path("uploads/anonymous")
+        uploads_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Generate unique filename to avoid conflicts
+        file_extension_with_dot = f".{file_extension}" if file_extension else ""
+        unique_filename = f"{detection_id}{file_extension_with_dot}"
+        file_path = uploads_dir / unique_filename
+        
+        # Save file to disk
+        with open(file_path, "wb") as f:
+            content = await file.read()
+            f.write(content)
+        
+        # Process video immediately (like Streamlit does)
+        # Initialize service without repository since we're not storing in DB
+        from app.services.detection import DetectionService
+        
+        # Create a service instance (repository not needed for processing)
+        service = DetectionService(repository=None)
+        
+        # Process the video synchronously
+        try:
+            processing_result = service.process_video(
+                video_file_content=content,
+                filename=file.filename or "unknown",
+                fps=settings.DEFAULT_FPS,
+                threshold=settings.DEFAULT_THRESHOLD
+            )
+            
+            # Build response with actual results
+            detection_dict = {
+                "id": detection_id,
+                "user_id": None,  # No user association for public uploads
+                "media_type": media_type,
+                "file_name": file.filename or "unknown",
+                "file_path": str(file_path),
+                "file_size": file_size,
+                "status": processing_result.get("status", DetectionStatus.COMPLETED),
+                "result": processing_result.get("result"),
+                "confidence_score": processing_result.get("confidence_score"),
+                "processing_time_seconds": processing_result.get("processing_time_seconds"),
+                "error_message": processing_result.get("error_message"),
+                "created_at": datetime.utcnow(),
+                "updated_at": datetime.utcnow() if processing_result.get("status") == DetectionStatus.COMPLETED else None,
+            }
+        except Exception as e:
+            # If processing fails, return error response
+            detection_dict = {
+                "id": detection_id,
+                "user_id": None,
+                "media_type": media_type,
+                "file_name": file.filename or "unknown",
+                "file_path": str(file_path),
+                "file_size": file_size,
+                "status": DetectionStatus.FAILED,
+                "result": None,
+                "confidence_score": None,
+                "processing_time_seconds": None,
+                "error_message": str(e),
+                "created_at": datetime.utcnow(),
+                "updated_at": None,
+            }
+        
+        return DetectionResponse(**detection_dict)
 
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -295,36 +349,47 @@ def get_user_detections(
 @router.get("/{detection_id}", response_model=DetectionResponse)
 def get_detection_by_id(
     detection_id: uuid.UUID,
-    session: SessionDep,
-    current_user: CurrentUser,
+    session: OptionalSessionDep,
 ) -> Any:
     """
-    Get a specific detection record by ID.
+    Get a specific detection record by ID (public endpoint, no authentication required).
+    Since processing happens immediately on upload, this endpoint returns the detection status.
+    If file exists, it means processing completed. Otherwise, detection not found.
     """
     try:
-        detection_service = DetectionService(
-            repository=DetectionRepository(session)
-        )
-        detection = detection_service.get_detection_by_id(detection_id)
-
-        if not detection:
+        from datetime import datetime
+        
+        # Check if file exists (means upload and processing completed)
+        uploads_dir = Path("uploads/anonymous")
+        # Try to find file with this detection ID
+        matching_files = list(uploads_dir.glob(f"{detection_id}.*"))
+        
+        if matching_files:
+            # File exists - processing was completed during upload
+            file_path = matching_files[0]
+            file_size = file_path.stat().st_size if file_path.exists() else 0
+            file_name = file_path.name
+            
+            detection_dict = {
+                "id": detection_id,
+                "user_id": None,
+                "media_type": "video",  # Default - could be improved
+                "file_name": file_name,
+                "file_path": str(file_path),
+                "file_size": file_size,
+                "status": DetectionStatus.COMPLETED,  # Processing completed during upload
+                "result": None,  # Results were returned in upload response
+                "confidence_score": None,
+                "processing_time_seconds": None,
+                "error_message": None,
+                "created_at": datetime.utcnow(),
+                "updated_at": datetime.utcnow(),
+            }
+        else:
+            # File not found - detection doesn't exist
             raise ValueError(f"Detection with ID {detection_id} not found")
-
-        if (
-            detection.user_id != current_user.id
-            and not current_user.is_superuser
-        ):
-            raise HTTPException(
-                status_code=403, detail="Not enough permissions"
-            )
-
-        return DetectionResponse(**detection.model_dump())
-
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-
-    except HTTPException:
-        raise
+        
+        return DetectionResponse(**detection_dict)
 
     except Exception as e:
         print(f"Error in get_detection_by_id: {str(e)}")

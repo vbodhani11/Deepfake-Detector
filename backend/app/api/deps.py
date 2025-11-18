@@ -1,7 +1,7 @@
 from typing import Annotated
 from collections.abc import Generator
 from fastapi import Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer
+from fastapi.security import OAuth2PasswordBearer, HTTPAuthorizationCredentials, HTTPBearer
 import jwt
 from pydantic import ValidationError
 from sqlmodel import Session
@@ -78,6 +78,37 @@ def get_current_user(session: SessionDep, token: TokenDep) -> User:
     return user
 
 CurrentUser = Annotated[User, Depends(get_current_user)]
+
+# Optional token dependency
+security_bearer = HTTPBearer(auto_error=False)
+
+def get_optional_user(
+    session: OptionalSessionDep,
+    credentials: HTTPAuthorizationCredentials | None = Depends(security_bearer)
+) -> User | None:
+    """
+    Dependency to get the current user from the token if provided, otherwise returns None.
+    """
+    if not credentials:
+        return None
+    
+    try:
+        payload = jwt.decode(
+            credentials.credentials, settings.SECRET_KEY, algorithms=[security.ALGORITHM]
+        )
+        token_data = TokenPayload(**payload)
+    except (InvalidTokenError, ValidationError):
+        return None
+    
+    if not session:
+        return None
+    
+    user = session.get(User, token_data.sub)
+    if not user or not user.is_active:
+        return None
+    return user
+
+OptionalUser = Annotated[User | None, Depends(get_optional_user)]
 
 def get_current_active_superuser(current_user: CurrentUser) -> User:
     """
