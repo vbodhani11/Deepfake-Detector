@@ -50,3 +50,4 @@ class DetectionUpdate(SQLModel):
     processing_time_seconds: Optional[float] = None
     frame_predictions: Optional[dict] = None
     error_message: Optional[str] = None
+    user_id: Optional[uuid.UUID] = None
