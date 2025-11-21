@@ -1,9 +1,9 @@
 from fastapi.testclient import TestClient
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 from app import crud
 from app.core.config import settings
-from app.models.schemas.users import UserCreate
+from app.models.schemas.users import UserCreate, User
 
 def user_authentication_headers(
     *, client: TestClient, email: str, password: str
@@ -32,6 +32,11 @@ def authentication_token_from_email(
     If the user doesn't exist it is created first.
     """
     password = "randompassword"
-    user_in = UserCreate(email=email, password=password)
-    user = crud.create_user(session=db, user_create=user_in)
+    statement = select(User).where(User.email == email)
+    user = db.exec(statement).first()
+
+    if not user:
+        user_in = UserCreate(email=email, password=password)
+        user = crud.create_user(session=db, user_create=user_in)
+
     return user_authentication_headers(client=client, email=email, password=password)

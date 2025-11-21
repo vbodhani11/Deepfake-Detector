@@ -62,6 +62,7 @@ class Settings(BaseSettings):
     # User Configuration
     FIRST_SUPERUSER: str = "admin@deepfakedetector.com"
     FIRST_SUPERUSER_PASSWORD: str = "changethis"
+    EMAIL_TEST_USER: str = "test@example.com"
 
     # File Upload Configuration
     MAX_FILE_SIZE_MB: int = 50

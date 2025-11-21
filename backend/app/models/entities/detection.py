@@ -1,4 +1,5 @@
 from typing import Optional
+import uuid
 from pydantic import BaseModel, ConfigDict
 from app.models.entities.common import BaseEntity
 from app.models.entities.enums import DetectionStatus, MediaType, DetectionResult
@@ -12,7 +13,7 @@ class DetectionRequest(BaseModel):
 
 class DetectionResponse(BaseEntity):
     """Response model for deepfake detection results"""
-    user_id: Optional[str] = None
+    user_id: Optional[uuid.UUID] = None
     media_type: MediaType
     file_name: str
     file_path: Optional[str] = None
