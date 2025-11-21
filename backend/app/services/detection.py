@@ -19,7 +19,7 @@ if str(model_src_path) not in sys.path:
 
 # Try to import the ML pipeline, but allow server to start without it
 try:
-    from deepfake_detector import DeepfakeDetectorPipeline
+    from deepfake_detector import DeepfakeDetectorPipeline  # type: ignore[import]
     ML_MODEL_AVAILABLE = True
 except ImportError as e:
     DeepfakeDetectorPipeline = None
@@ -158,6 +158,34 @@ class DetectionService:
     def get_detection_by_id(self, detection_id: uuid.UUID) -> Optional[Detection]:
         """Get detection by ID"""
         return self.repository.get(detection_id)
+
+    def save_detection_to_user(
+        self,
+        detection_id: uuid.UUID,
+        user_id: uuid.UUID
+    ) -> Detection:
+        """ Link anonymous detection to user account """
+        if not self.repository:
+            raise ValueError("Repository not available. Database connection required.")
+
+        detection = self.repository.get(detection_id)
+        if not detection:
+            raise ValueError(f"Detection with ID {detection_id} not found")
+
+        # Detection already belongs to some *other* user
+        if detection.user_id is not None and detection.user_id != user_id:
+            raise ValueError("Detection already belongs to another user")
+
+        # Already linked to this user – idempotent, just return
+        if detection.user_id == user_id:
+            return detection
+
+        # Update user_id using DetectionUpdate
+        detection_update = DetectionUpdate(user_id=user_id)
+        detection = self.repository.update(detection, detection_update)
+
+        return detection
+
 
     def get_user_detections(self, user_id: uuid.UUID, page: int = 1, per_page: int = 20) -> DetectionListResponse:
         """Get detections for a specific user with pagination"""

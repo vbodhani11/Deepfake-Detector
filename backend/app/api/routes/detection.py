@@ -398,6 +398,79 @@ def get_detection_by_id(
             detail="An error occurred retrieving the detection",
         )
 
+@router.post("/{detection_id}/save", response_model=DetectionResponse)
+def save_detection_report(
+    detection_id: uuid.UUID,
+    session: SessionDep,
+    current_user: CurrentUser,
+) -> Any:
+    """
+    Save anonymous detection to user account (requires authentication)
+
+    Links an anonymous detection to the authenticated user's account
+    so they can view it in their reports.
+    """
+    try:
+        detection_service = DetectionService(
+            repository=DetectionRepository(session)
+        )
+
+        # Save detection to user account
+        detection = detection_service.save_detection_to_user(
+            detection_id=detection_id,
+            user_id=current_user.id,
+        )
+
+        return DetectionResponse(**detection.model_dump())
+
+    except ValueError as e:
+        # Business/validation errors: detection not found, belongs to another user, etc.
+        raise HTTPException(status_code=400, detail=str(e))
+
+    except Exception as e:
+        print(f"Error in save_detection_report: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail="An error occurred saving the detection",
+        )
+
+
+@router.delete("/{detection_id}")
+def delete_detection(
+    detection_id: uuid.UUID,
+    session: SessionDep,
+    current_user: CurrentUser,
+) -> Any:
+    """
+    Save anonymous detection to user account (requires authentication)
+
+    Links an anonymous detection to the authenticated user's account
+    so they can view it in their reports.
+    """
+    try:
+        detection_service = DetectionService(
+            repository=DetectionRepository(session)
+        )
+
+        # Save detection to user account
+        detection = detection_service.save_detection_to_user(
+            detection_id=detection_id,
+            user_id=current_user.id,
+        )
+
+        return DetectionResponse(**detection.model_dump())
+
+    except ValueError as e:
+        # Business/validation errors: detection not found, belongs to another user, etc.
+        raise HTTPException(status_code=400, detail=str(e))
+
+    except Exception as e:
+        print(f"Error in save_detection_report: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail="An error occurred saving the detection",
+        )
+
 
 @router.delete("/{detection_id}")
 def delete_detection(
