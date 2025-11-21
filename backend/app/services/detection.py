@@ -29,12 +29,15 @@ except ImportError as e:
 
 
 class DetectionService:
-    def __init__(self, repository: DetectionRepository):
+    def __init__(self, repository: Optional[DetectionRepository] = None):
         self.repository = repository
         self.pipeline = None
     
-    def _get_pipeline(self) -> DeepfakeDetectorPipeline:
+    def _get_pipeline(self) -> Optional[DeepfakeDetectorPipeline]:
         """Get or initialize pipeline (singleton pattern)"""
+        if not ML_MODEL_AVAILABLE:
+            raise ImportError("ML model dependencies are not available. Please install opencv-python and other ML dependencies.")
+        
         if self.pipeline is None:
             model_path = Path(settings.MODEL_PATH)
             if not model_path.is_absolute():

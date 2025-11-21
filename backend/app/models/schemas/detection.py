@@ -10,7 +10,7 @@ class DetectionBase(SQLModel):
     user_id: Optional[uuid.UUID] = Field(default=None, foreign_key="user.id")  # Already nullable
     media_type: MediaType
     file_name: str = Field(max_length=255)
-    file_path: Optional[str] = Field(default=None, max_length=500)  # Optional since we don't store files
+    file_path: Optional[str] = Field(default=None, max_length=500)
     file_size: int
     status: DetectionStatus = DetectionStatus.PENDING
     result: Optional[DetectionResult] = None
