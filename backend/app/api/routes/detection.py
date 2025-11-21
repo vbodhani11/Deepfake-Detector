@@ -30,14 +30,34 @@ async def analyze_video(
     file: UploadFile = File(...),
     fps: int = Form(settings.DEFAULT_FPS),
     threshold: float = Form(settings.DEFAULT_THRESHOLD),
+    save_report: bool = Form(False),
+    current_user: OptionalUser = None,
 ) -> Any:
     """
-    Public endpoint to analyze video for deepfakes (no authentication required)
+    Public endpoint to analyze video for deepfakes
 
-    Processes video immediately and returns results.
-    Video is not stored — processed in memory and discarded.
+    - No authentication required for basic detection
+    - If save_report=True, authentication is required
+    - If authenticated and save_report=True, detection is linked to user
     """
     try:
+        detection_service = None
+        detection_repository = None
+        if session is not None:
+            detection_repository = DetectionRepository(session)
+            detection_service = DetectionService(repository=detection_repository)
+        else:
+            detection_service = DetectionService()
+
+        if save_report and current_user is None:
+            raise HTTPException(
+                status_code=401,
+                detail=(
+                    "Authentication required to save reports. "
+                    "Please login or set save_report=false"
+                ),
+            )
+
         # Validate file size
         if file.size and file.size > settings.MAX_FILE_SIZE_MB * 1024 * 1024:
             raise HTTPException(
@@ -79,21 +99,21 @@ async def analyze_video(
         file_content = await file.read()
         file_size = len(file_content)
 
+        user_id = current_user.id if (current_user and save_report) else None
+
         # Try to create detection entry in database (optional - for tracking)
         detection = None
         if session is not None:
             try:
                 detection_create = DetectionCreate(
-                    user_id=None,
+                    user_id=user_id,
                     media_type=MediaType.VIDEO,
                     file_name=file.filename,
                     file_path=None,
                     file_size=file_size,
                     status=DetectionStatus.PROCESSING,
-                )
-
-                detection_service = DetectionService(
-                    repository=DetectionRepository(session)
+                    fps_used=fps,
+                    threshold_used=threshold,
                 )
 
                 detection = detection_service.create_detection(detection_create)
@@ -101,62 +121,62 @@ async def analyze_video(
                 # Database not available - continue without storing detection record
                 print(f"Database not available, processing without storage: {str(db_error)}")
                 session = None
+                detection_repository = None
+                detection_service = DetectionService()
 
         # Process the video
+        base_results = {
+            "status": DetectionStatus.COMPLETED,
+            "result": None,
+            "confidence_score": None,
+            "average_fake_probability": None,
+            "fake_ratio": None,
+            "total_frames_processed": None,
+            "fake_frames": None,
+            "real_frames": None,
+            "fps_used": fps,
+            "threshold_used": threshold,
+            "processing_time_seconds": None,
+            "frame_predictions": None,
+            "error_message": None,
+        }
+
         try:
-            # TODO: Implement actual video processing logic
-            # For now, return a mock response
+            processing_results = detection_service.process_video(
+                video_file_content=file_content,
+                filename=file.filename,
+                fps=fps,
+                threshold=threshold,
+            )
+            results = {**base_results, **(processing_results or {})}
+        except Exception as processing_error:
+            print(f"Video processing failed: {str(processing_error)}")
             results = {
-                "status": DetectionStatus.COMPLETED,
-                "result": None,  # Will be set by actual processing
-                "confidence_score": None,
-                "processing_time_seconds": None,
-                "error_message": None,
+                **base_results,
+                "status": DetectionStatus.FAILED,
+                "error_message": str(processing_error),
             }
 
-            # If database is available, update the detection record
-            if detection and session is not None:
-                try:
-                    detection_service = DetectionService(
-                        repository=DetectionRepository(session)
-                    )
-                    detection_update = DetectionUpdate(**results)
-                    detection = detection_service.update_detection(
-                        detection.id, detection_update
-                    )
-                except Exception as db_error:
-                    print(f"Could not update detection in database: {str(db_error)}")
-                    # Create a response from the detection object we have
-                    detection_dict = detection.model_dump()
-                    detection_dict.update(results)
-                    detection = type('Detection', (), detection_dict)()
-
-        except Exception as e:
-            # If database is available, update status to failed
-            if detection and session is not None:
-                try:
-                    detection_service = DetectionService(
-                        repository=DetectionRepository(session)
-                    )
-                    detection_update = DetectionUpdate(
-                        status=DetectionStatus.FAILED,
-                        error_message=str(e),
-                    )
-                    detection = detection_service.update_detection(
-                        detection.id, detection_update
-                    )
-                except Exception:
-                    pass
-            raise HTTPException(
-                status_code=500, detail=f"Error processing video: {str(e)}"
-            )
+        # If database is available, update the detection record
+        if detection and session is not None:
+            try:
+                detection_update = DetectionUpdate(**results)
+                detection = detection_service.update_detection(
+                    detection.id, detection_update
+                )
+            except Exception as db_error:
+                print(f"Could not update detection in database: {str(db_error)}")
+                # Create a response from the detection object we have
+                detection_dict = detection.model_dump()
+                detection_dict.update(results)
+                detection = type('Detection', (), detection_dict)()
 
         # If no database record was created, create a response object directly
         if not detection:
             now = datetime.utcnow()
             detection_dict = {
                 "id": uuid.uuid4(),
-                "user_id": None,
+                "user_id": user_id,
                 "media_type": MediaType.VIDEO,
                 "file_name": file.filename,
                 "file_path": None,
@@ -164,7 +184,15 @@ async def analyze_video(
                 "status": DetectionStatus.COMPLETED,
                 "result": None,
                 "confidence_score": None,
+                "average_fake_probability": None,
+                "fake_ratio": None,
+                "total_frames_processed": None,
+                "fake_frames": None,
+                "real_frames": None,
+                "fps_used": fps,
+                "threshold_used": threshold,
                 "processing_time_seconds": None,
+                "frame_predictions": None,
                 "error_message": None,
                 "created_at": now,
                 "updated_at": now,

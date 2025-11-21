@@ -35,15 +35,16 @@ def get_db_optional() -> Generator[Session | None, None, None]:
         session = Session(engine)
         # Test the connection
         session.connection()
-        yield session
     except Exception:
-        # Database not available - return None
         if session:
             try:
                 session.close()
             except Exception:
                 pass
-        yield None
+        session = None
+
+    try:
+        yield session
     finally:
         if session:
             try:
