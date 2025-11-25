@@ -22,6 +22,7 @@ model/
 └── scripts/                    # Utility scripts
 ```
 
+
 ## Using the Detector Library
 
 ### Basic Usage
