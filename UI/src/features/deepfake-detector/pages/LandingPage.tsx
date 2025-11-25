@@ -2,6 +2,7 @@ import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import ParticlesBackground from '../components/ParticlesBackground';
 import FuturisticButton from '../components/FuturisticButton';
+import Navigation from '../components/Navigation';
 
 const LandingPage: React.FC = () => {
   const navigate = useNavigate();
@@ -36,6 +37,11 @@ const LandingPage: React.FC = () => {
   return (
     <div className='min-h-screen bg-animated text-gray-300 relative overflow-x-hidden deepfake-app'>
       <ParticlesBackground />
+
+      {/* Navigation */}
+      <div className='relative z-10'>
+        <Navigation />
+      </div>
 
       {/* Main Content */}
       <div className='relative z-10 text-center'>

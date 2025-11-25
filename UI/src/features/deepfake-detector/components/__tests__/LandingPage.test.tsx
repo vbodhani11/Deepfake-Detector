@@ -10,6 +10,12 @@ jest.mock('../ParticlesBackground', () => {
   };
 });
 
+jest.mock('../Navigation', () => {
+  return function MockNavigation() {
+    return <div data-testid='navigation'>Navigation</div>;
+  };
+});
+
 const renderWithRouter = (component: React.ReactElement) => {
   return render(<BrowserRouter>{component}</BrowserRouter>);
 };
