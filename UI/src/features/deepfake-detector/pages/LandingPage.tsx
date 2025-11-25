@@ -19,6 +19,7 @@ const LandingPage: React.FC = () => {
     {
       title: 'Detailed Reports',
       description: 'Comprehensive analysis with downloadable results and visual indicators.',
+      targetPath: '/reports',
     },
     {
       title: 'Easy & Fast Process',
@@ -87,10 +88,14 @@ const LandingPage: React.FC = () => {
 
           <div className='grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 max-w-6xl mx-auto'>
             {features.map((feature, index) => (
-              <div
+              <button
+                type='button'
                 key={index}
-                className='bg-gray-800 bg-opacity-60 rounded-lg p-6 backdrop-blur-sm
-                           feature-card-hover cursor-pointer group'
+                onClick={() => feature.targetPath && navigate(feature.targetPath)}
+                className={`text-left bg-gray-800 bg-opacity-60 rounded-lg p-6 backdrop-blur-sm
+                           feature-card-hover group transition-all duration-300 ${
+                             feature.targetPath ? 'cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-400' : ''
+                           }`}
               >
                 <h4
                   className='text-2xl font-bold text-blue-400 uppercase tracking-wide mb-4 
@@ -100,7 +105,7 @@ const LandingPage: React.FC = () => {
                   {feature.title}
                 </h4>
                 <p className='text-gray-300'>{feature.description}</p>
-              </div>
+              </button>
             ))}
           </div>
         </div>
