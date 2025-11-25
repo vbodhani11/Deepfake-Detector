@@ -1,11 +1,8 @@
 import React from 'react';
 
-interface FuturisticButtonProps {
-  onClick?: () => void;
-  children: React.ReactNode;
+interface FuturisticButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: 'primary' | 'secondary';
   className?: string;
-  disabled?: boolean;
 }
 
 const FuturisticButton: React.FC<FuturisticButtonProps> = ({
@@ -14,6 +11,8 @@ const FuturisticButton: React.FC<FuturisticButtonProps> = ({
   variant = 'primary',
   className = '',
   disabled = false,
+  type = 'button',
+  ...rest
 }) => {
   const baseClasses = `
     relative font-semibold text-lg rounded-xl cursor-pointer border-none
@@ -32,6 +31,8 @@ const FuturisticButton: React.FC<FuturisticButtonProps> = ({
       onClick={disabled ? undefined : onClick}
       disabled={disabled}
       aria-busy={disabled}
+      type={type}
+      {...rest}
     >
       <span className='relative z-10 flex items-center px-4 py-3 transition-colors duration-400'>{children}</span>
     </button>
