@@ -5,6 +5,13 @@ export type DetectionStatus = 'pending' | 'processing' | 'completed' | 'failed';
 export type DetectionResult = 'real' | 'fake' | 'uncertain';
 export type MediaType = 'image' | 'video';
 
+export interface FramePrediction {
+  frame_index: number;
+  timestamp_ms?: number;
+  fake_probability: number;
+  classification: DetectionResult;
+}
+
 export interface DetectionRecord {
   id: string;
   created_at: string;
@@ -19,6 +26,14 @@ export interface DetectionRecord {
   confidence_score?: number | null;
   processing_time_seconds?: number | null;
   error_message?: string | null;
+  total_frames_processed?: number | null;
+  fake_frames?: number | null;
+  real_frames?: number | null;
+  fake_ratio?: number | null;
+  average_fake_probability?: number | null;
+  fps_used?: number | null;
+  threshold_used?: number | null;
+  frame_predictions?: FramePrediction[];
 }
 
 const resolveAuthToken = (): string | null => {
