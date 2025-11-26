@@ -4,6 +4,7 @@ import LandingPage from '../pages/LandingPage';
 import UploadPage from '../pages/UploadPage';
 import AnalysisPage from '../pages/AnalysisPage';
 import LoginPage from '../pages/LoginPage';
+import SignupPage from '../pages/SignupPage';
 import ReportsPage from '../pages/ReportsPage';
 import ProtectedRoute from '../components/ProtectedRoute';
 
@@ -22,6 +23,7 @@ const DeepfakeRoutes: React.FC = () => {
         }
       />
       <Route path='/login' element={<LoginPage />} />
+      <Route path="/signup" element={<SignupPage />} />
     </Routes>
   );
 };

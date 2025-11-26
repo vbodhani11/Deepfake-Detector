@@ -15,7 +15,7 @@ SQLAlchemy==2.0.39
 PyJWT==2.10.1
 passlib[bcrypt]==1.7.4
 python-multipart==0.0.20
-
+bcrypt==4.0.1
 # Environment & Configuration
 python-dotenv==1.0.1
 

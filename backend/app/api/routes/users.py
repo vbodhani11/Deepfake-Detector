@@ -15,7 +15,7 @@ def read_user_me(current_user: CurrentUser) -> Any:
     """
     Get current user.
     """
-    return UserResponse(**current_user.model_dump())
+    return UserResponse(**current_user.model_dump() | {"id": str(current_user.id)})
 
 @router.post("/", response_model=UserResponse)
 def create_user(*, session: SessionDep, user_in: UserCreate) -> Any:
@@ -25,7 +25,9 @@ def create_user(*, session: SessionDep, user_in: UserCreate) -> Any:
     try:
         user_service = UserService(repository=UserRepository(session))
         user = user_service.create_user(user_in)
-        return UserResponse(**user.model_dump())
+        output = user.model_dump()
+        output["id"] = str(output["id"])
+        return UserResponse(**output)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
@@ -42,7 +44,9 @@ def update_user_me(
     try:
         user_service = UserService(repository=UserRepository(session))
         user = user_service.update_user(current_user.id, user_in)
-        return UserResponse(**user.model_dump())
+        output = user.model_dump()
+        output["id"] = str(output["id"])
+        return UserResponse(**output)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
@@ -66,7 +70,9 @@ def read_user_by_id(
         if user.id != current_user.id and not current_user.is_superuser:
             raise HTTPException(status_code=403, detail="Not enough permissions")
             
-        return UserResponse(**user.model_dump())
+        output = user.model_dump()
+        output["id"] = str(output["id"])
+        return UserResponse(**output)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except HTTPException:
