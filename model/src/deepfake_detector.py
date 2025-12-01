@@ -7,12 +7,19 @@ import os
 import cv2
 import torch
 import numpy as np
-import mediapipe as mp
 from pathlib import Path
 from PIL import Image
 from torchvision import transforms
 import timm
-from typing import Union, List, Dict, Any
+from typing import Union, List, Dict, Any, Optional
+
+# Try to import MediaPipe (optional - for Python 3.12 and below)
+try:
+    import mediapipe as mp
+    MEDIAPIPE_AVAILABLE = True
+except ImportError:
+    MEDIAPIPE_AVAILABLE = False
+    mp = None
 
 
 class DeepfakeDetectorPipeline:
@@ -33,12 +40,23 @@ class DeepfakeDetectorPipeline:
         """
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         
-        # Initialize MediaPipe face detection
-        self.mp_face_detection = mp.solutions.face_detection
-        self.face_detector = self.mp_face_detection.FaceDetection(
-            model_selection=1, 
-            min_detection_confidence=0.5
-        )
+        # Initialize face detection (MediaPipe or OpenCV fallback)
+        self.use_mediapipe = MEDIAPIPE_AVAILABLE
+        self.face_detector = None
+        self.opencv_face_detector = None
+        
+        if MEDIAPIPE_AVAILABLE:
+            # Use MediaPipe if available (Python 3.12 and below)
+            self.mp_face_detection = mp.solutions.face_detection
+            self.face_detector = self.mp_face_detection.FaceDetection(
+                model_selection=1, 
+                min_detection_confidence=0.5
+            )
+            print("Using MediaPipe for face detection")
+        else:
+            # Use OpenCV DNN face detector (Python 3.13 compatible)
+            self._init_opencv_face_detector()
+            print("Using OpenCV DNN for face detection (MediaPipe not available)")
         
         # Define preprocessing transforms (same as your validation transforms)
         self.preprocess = transforms.Compose([
@@ -50,6 +68,51 @@ class DeepfakeDetectorPipeline:
         ])
         
         print(f"Pipeline initialized on device: {self.device}")
+    
+    def _init_opencv_face_detector(self):
+        """Initialize OpenCV DNN face detector."""
+        self.use_haar_cascade = False
+        
+        # Try to use OpenCV DNN face detector
+        # If model files are not available, fall back to Haar Cascade
+        try:
+            # Try to load DNN model from common locations or download
+            prototxt_path = None
+            model_path = None
+            
+            # Check if files exist in current directory or common locations
+            for base_path in [Path(__file__).parent, Path.home() / ".opencv_dnn"]:
+                prototxt_file = base_path / "opencv_face_detector.pbtxt"
+                model_file = base_path / "opencv_face_detector_uint8.pb"
+                
+                if prototxt_file.exists() and model_file.exists():
+                    prototxt_path = str(prototxt_file)
+                    model_path = str(model_file)
+                    break
+            
+            if prototxt_path and model_path:
+                self.opencv_face_detector = cv2.dnn.readNetFromTensorflow(model_path, prototxt_path)
+                self.use_haar_cascade = False
+                print(f"Loaded OpenCV DNN face detector from {model_path}")
+            else:
+                # Fall back to Haar Cascade (built-in, no download needed)
+                cascade_path = cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
+                if os.path.exists(cascade_path):
+                    self.opencv_face_detector = cv2.CascadeClassifier(cascade_path)
+                    self.use_haar_cascade = True
+                    print(f"Using Haar Cascade face detector from {cascade_path}")
+                else:
+                    raise FileNotFoundError("Could not find face detection model files")
+        except Exception as e:
+            print(f"Warning: Could not initialize OpenCV DNN face detector: {e}")
+            # Final fallback to Haar Cascade
+            try:
+                cascade_path = cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
+                self.opencv_face_detector = cv2.CascadeClassifier(cascade_path)
+                self.use_haar_cascade = True
+                print(f"Using Haar Cascade face detector (fallback)")
+            except Exception as e2:
+                raise RuntimeError(f"Could not initialize any face detector: {e2}")
     
     def _load_model(self, model_path: str):
         """Load the trained Xception model."""
@@ -78,30 +141,78 @@ class DeepfakeDetectorPipeline:
         ny2 = min(H - 1, int(cy + h / 2))
         return nx1, ny1, nx2, ny2
     
-    def _detect_largest_face(self, img: np.ndarray) -> tuple:
-        """Detect the largest face in the image (same as your code)."""
-        # Convert BGR to RGB for MediaPipe
-        img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        results = self.face_detector.process(img_rgb)
-        
-        if not results.detections:
-            return None
-        
+    def _detect_largest_face(self, img: np.ndarray) -> Optional[tuple]:
+        """Detect the largest face in the image using MediaPipe or OpenCV."""
+        if self.use_mediapipe and self.face_detector is not None:
+            # Use MediaPipe face detection
+            img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+            results = self.face_detector.process(img_rgb)
+            
+            if not results.detections:
+                return None
+            
+            largest_face = None
+            largest_area = 0
+            
+            for detection in results.detections:
+                bbox = detection.location_data.relative_bounding_box
+                ih, iw, _ = img.shape
+                x = int(bbox.xmin * iw)
+                y = int(bbox.ymin * ih)
+                w = int(bbox.width * iw)
+                h = int(bbox.height * ih)
+                
+                area = w * h
+                if area > largest_area:
+                    largest_area = area
+                    largest_face = (x, y, x + w, y + h)
+            
+            return largest_face
+        else:
+            # Use OpenCV face detection
+            return self._detect_largest_face_opencv(img)
+    
+    def _detect_largest_face_opencv(self, img: np.ndarray) -> Optional[tuple]:
+        """Detect the largest face using OpenCV (DNN or Haar Cascade)."""
+        h, w = img.shape[:2]
         largest_face = None
         largest_area = 0
         
-        for detection in results.detections:
-            bbox = detection.location_data.relative_bounding_box
-            ih, iw, _ = img.shape
-            x = int(bbox.xmin * iw)
-            y = int(bbox.ymin * ih)
-            w = int(bbox.width * iw)
-            h = int(bbox.height * ih)
+        if hasattr(self, 'use_haar_cascade') and self.use_haar_cascade:
+            # Use Haar Cascade
+            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+            faces = self.opencv_face_detector.detectMultiScale(
+                gray, 
+                scaleFactor=1.1, 
+                minNeighbors=5, 
+                minSize=(30, 30)
+            )
             
-            area = w * h
-            if area > largest_area:
-                largest_area = area
-                largest_face = (x, y, x + w, y + h)
+            for (x, y, face_w, face_h) in faces:
+                area = face_w * face_h
+                if area > largest_area:
+                    largest_area = area
+                    largest_face = (x, y, x + face_w, y + face_h)
+        else:
+            # Use DNN face detector
+            blob = cv2.dnn.blobFromImage(cv2.resize(img, (300, 300)), 1.0, (300, 300), [104, 117, 123])
+            self.opencv_face_detector.setInput(blob)
+            detections = self.opencv_face_detector.forward()
+            
+            confidence_threshold = 0.5
+            
+            for i in range(detections.shape[2]):
+                confidence = detections[0, 0, i, 2]
+                if confidence > confidence_threshold:
+                    x1 = int(detections[0, 0, i, 3] * w)
+                    y1 = int(detections[0, 0, i, 4] * h)
+                    x2 = int(detections[0, 0, i, 5] * w)
+                    y2 = int(detections[0, 0, i, 6] * h)
+                    
+                    area = (x2 - x1) * (y2 - y1)
+                    if area > largest_area:
+                        largest_area = area
+                        largest_face = (x1, y1, x2, y2)
         
         return largest_face
     

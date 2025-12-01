@@ -3,6 +3,36 @@
 /* Import Google Fonts */
 @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Audiowide&display=swap');
 
+/* Prevent overscroll bounce and white background flash */
+html {
+  background-color: #06090e !important;
+  overscroll-behavior: none;
+  overscroll-behavior-y: none;
+}
+
+body {
+  background-color: #06090e !important;
+  overscroll-behavior: none;
+  overscroll-behavior-y: none;
+  -webkit-overflow-scrolling: touch;
+  margin: 0;
+  padding: 0;
+}
+
+/* Prevent rubber band effect on macOS/iOS */
+html,
+body {
+  position: relative;
+  overflow-x: hidden;
+}
+
+/* Ensure root div can scroll properly */
+#root {
+  overscroll-behavior: none;
+  overscroll-behavior-y: none;
+  -webkit-overflow-scrolling: touch;
+}
+
 /* Global font override for futuristic look */
 .deepfake-app {
   font-family: 'Orbitron', sans-serif;

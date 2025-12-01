@@ -262,10 +262,6 @@ server_disabled.log
 # Docker
 .dockerignore
 
-# Alembic
-backend/app/alembic/versions/*.py
-!backend/app/alembic/versions/__init__.py
-
 # Temporary files
 tmp/
 temp/
