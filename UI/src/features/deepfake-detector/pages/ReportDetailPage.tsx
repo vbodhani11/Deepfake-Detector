@@ -57,7 +57,7 @@ const ReportDetailPage: React.FC = () => {
   const resultLabel = formatResultLabel(report.result ?? undefined);
   const fakeRatioPercent = report.fake_ratio ? `${Math.round(report.fake_ratio * 100)}%` : '—';
   const confidenceValue = report.confidence_score ?? 0;
-  const framePredictions = report.frame_predictions ?? [];
+  const framePredictions = report.frame_predictions?.frames ?? [];
 
   return (
     <div className='min-h-screen bg-animated text-gray-200 deepfake-app relative overflow-hidden'>
