@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import ParticlesBackground from '../components/ParticlesBackground';
 import FuturisticButton from '../components/FuturisticButton';
 import ProgressBar from '../components/ProgressBar';
+import FrameByFramePlayer from '../components/FrameByFramePlayer';
 import { DetectionRecord, DetectionStatus, fetchDetectionById } from '../api/detection';
 
 interface AnalysisResult {
@@ -173,7 +174,7 @@ const AnalysisPage: React.FC = () => {
               </div>
             ) : result ? (
               <div>
-                {/* Results */}
+                {/* Results Header */}
                 <div className={`text-8xl mb-6 ${result.isDeepfake ? 'text-red-500' : 'text-green-500'}`}>
                   {result.isDeepfake ? '⚠️' : '✅'}
                 </div>
@@ -198,6 +199,21 @@ const AnalysisPage: React.FC = () => {
                     {result.confidence.toFixed(1)}% {result.isDeepfake ? 'Deepfake' : 'Authentic'}
                   </p>
                 </div>
+
+                {/* Frame-by-Frame Video Player for Fake Videos */}
+                {result.isDeepfake &&
+                detection?.media_type === 'video' &&
+                detection?.frame_predictions &&
+                detection.frame_predictions.frames &&
+                detection.frame_predictions.frames.length > 0 && (
+                  <div className='mb-8'>
+                    <FrameByFramePlayer
+                      videoUrl={`/api/v1/detection/${detection.id}/file`}
+                      framePredictions={detection.frame_predictions.frames}
+                      fps={detection.fps_used || 3}
+                    />
+                  </div>
+                )}
 
                 {/* Analysis Details */}
                 <div className='text-left bg-gray-900 bg-opacity-50 rounded-lg p-6 mb-6'>

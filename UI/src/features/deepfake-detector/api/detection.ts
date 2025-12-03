@@ -33,7 +33,9 @@ export interface DetectionRecord {
   average_fake_probability?: number | null;
   fps_used?: number | null;
   threshold_used?: number | null;
-  frame_predictions?: FramePrediction[];
+  frame_predictions?: {
+    frames: FramePrediction[];
+  } | null;
 }
 
 const resolveAuthToken = (): string | null => {

@@ -387,7 +387,15 @@ async def upload_media_for_detection(
                 "status": processing_result.get("status", DetectionStatus.COMPLETED),
                 "result": processing_result.get("result"),
                 "confidence_score": processing_result.get("confidence_score"),
+                "average_fake_probability": processing_result.get("average_fake_probability"),
+                "fake_ratio": processing_result.get("fake_ratio"),
+                "total_frames_processed": processing_result.get("total_frames_processed"),
+                "fake_frames": processing_result.get("fake_frames"),
+                "real_frames": processing_result.get("real_frames"),
+                "fps_used": processing_result.get("fps_used"),
+                "threshold_used": processing_result.get("threshold_used"),
                 "processing_time_seconds": processing_result.get("processing_time_seconds"),
+                "frame_predictions": processing_result.get("frame_predictions"),
                 "error_message": processing_result.get("error_message"),
                 "created_at": datetime.utcnow(),
                 "updated_at": datetime.utcnow() if processing_result.get("status") == DetectionStatus.COMPLETED else None,
@@ -503,6 +511,40 @@ def get_detection_by_id(
             status_code=500,
             detail="An error occurred retrieving the detection",
         )
+
+@router.get("/{detection_id}/file")
+async def get_detection_file(
+    detection_id: uuid.UUID,
+) -> Any:
+    """
+    Serve the uploaded file (video/image) for a detection record.
+    Public endpoint, no authentication required.
+    """
+    try:
+        from fastapi.responses import FileResponse
+        from pathlib import Path
+        
+        uploads_dir = Path("uploads/anonymous")
+        matching_files = list(uploads_dir.glob(f"{detection_id}.*"))
+        
+        if not matching_files:
+            raise HTTPException(status_code=404, detail="File not found")
+        
+        file_path = matching_files[0]
+        
+        if not file_path.exists():
+            raise HTTPException(status_code=404, detail="File not found")
+        
+        return FileResponse(
+            path=str(file_path),
+            media_type="video/mp4",  # Could be improved to detect actual type
+            filename=file_path.name
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error serving file: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error serving file")
 
 @router.post("/{detection_id}/save", response_model=DetectionResponse)
 def save_detection_report(
