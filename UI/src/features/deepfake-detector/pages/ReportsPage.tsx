@@ -1,7 +1,7 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { DetectionRecord, DetectionResult } from '../api/detection';
-import { mockDetectionRecords } from '../data/mock-detection-records';
+import { DetectionRecord, DetectionResult, fetchUserDetections } from '../api/detection';
+import { useEffect, useState } from 'react';
 
 const resultColors: Record<DetectionResult, { text: string; dot: string; label: string }> = {
   real: { text: 'text-emerald-300', dot: 'bg-emerald-400', label: 'Real' },
@@ -22,10 +22,39 @@ const formatConfidence = (value?: number | null): string => {
 
 const ReportsPage: React.FC = () => {
   const navigate = useNavigate();
+  const [reports, setReports] = useState<DetectionRecord[]>([]);
+  const [page, setPage] = useState(1);
+  const [perPage] = useState(12);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const handleNavigateToDetail = (recordId: DetectionRecord['id']) => {
     navigate(`/reports/${recordId}`);
   };
+
+  useEffect(() => {
+    let isActive = true;
+    const load = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const resp = await fetchUserDetections(page, perPage);
+        if (!isActive) return;
+        setReports(resp.items);
+        setTotal(resp.total ?? resp.items.length);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to load reports');
+      } finally {
+        if (isActive) setLoading(false);
+      }
+    };
+
+    load();
+    return () => {
+      isActive = false;
+    };
+  }, [page, perPage]);
 
   const resolveResultStyles = (result?: DetectionResult | null) => {
     if (!result) {
@@ -55,57 +84,91 @@ const ReportsPage: React.FC = () => {
           </div>
         </div>
 
-        <div className='grid grid-cols-1 md:grid-cols-2 gap-6'>
-          {mockDetectionRecords.map(record => {
-            const resultStyle = resolveResultStyles(record.result ?? undefined);
-            return (
+        <div className='min-h-[200px]'>
+          {loading ? (
+            <div className='py-12 text-center text-slate-400'>Loading reports...</div>
+          ) : error ? (
+            <div className='py-12 text-center text-rose-300'>Error: {error}</div>
+          ) : !reports.length ? (
+            <div className='py-24 text-center text-slate-400'>No saved reports yet.</div>
+          ) : (
+            <div className='grid grid-cols-1 md:grid-cols-2 gap-6'>
+              {reports.map(record => {
+                const resultStyle = resolveResultStyles(record.result ?? undefined);
+                return (
+                  <button
+                    type='button'
+                    key={record.id}
+                    onClick={() => handleNavigateToDetail(record.id)}
+                    className='text-left bg-slate-900/60 border border-slate-700/60 rounded-2xl p-6 hover:border-blue-500/60 hover:shadow-lg hover:shadow-blue-500/10 transition-all duration-300 group backdrop-blur-sm'
+                  >
+                    <div className='flex items-start justify-between gap-3 mb-4'>
+                      <div>
+                        <p className='text-xs uppercase tracking-widest text-slate-400'>File</p>
+                        <h2 className='text-xl font-semibold text-blue-50 mt-1'>{record.file_name}</h2>
+                      </div>
+                      <span className='text-xs text-slate-400'>{formatDateTime(record.created_at)}</span>
+                    </div>
+
+                    <div className='flex items-center gap-3 mb-6'>
+                      <span className={`inline-flex items-center gap-2 font-semibold ${resultStyle.text}`}>
+                        <span className={`h-2.5 w-2.5 rounded-full ${resultStyle.dot}`} />
+                        {resultStyle.label}
+                      </span>
+                      <span className='text-xs uppercase tracking-widest text-slate-500'>|</span>
+                      <span className='text-xs uppercase tracking-widest text-slate-300'>{record.status}</span>
+                    </div>
+
+                    <div className='grid grid-cols-2 gap-6'>
+                      <div>
+                        <p className='text-xs uppercase tracking-widest text-slate-400 mb-1'>Confidence</p>
+                        <p className='text-3xl font-bold text-blue-300'>{formatConfidence(record.confidence_score)}</p>
+                      </div>
+                      <div className='text-right'>
+                        <p className='text-xs uppercase tracking-widest text-slate-400 mb-1'>Processing</p>
+                        <p className='text-lg font-semibold text-slate-200'>
+                          {record.processing_time_seconds ? `${record.processing_time_seconds}s` : 'N/A'}
+                        </p>
+                        <p className='text-xs text-slate-400'>Elapsed time</p>
+                      </div>
+                    </div>
+
+                    <div className='mt-6 flex items-center justify-between text-sm text-slate-400'>
+                      <span>ID: {record.id}</span>
+                      <span className='inline-flex items-center gap-1 text-blue-300 group-hover:text-blue-200'>
+                        View report 
+                      </span>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+        {/* Pagination */}
+        {total > perPage && (
+          <div className='max-w-6xl mx-auto mt-8 flex items-center justify-between'>
+            <div className='text-sm text-slate-400'>Showing page {page}</div>
+            <div className='flex gap-2'>
               <button
                 type='button'
-                key={record.id}
-                onClick={() => handleNavigateToDetail(record.id)}
-                className='text-left bg-slate-900/60 border border-slate-700/60 rounded-2xl p-6 hover:border-blue-500/60 hover:shadow-lg hover:shadow-blue-500/10 transition-all duration-300 group backdrop-blur-sm'
+                onClick={() => setPage(p => Math.max(1, p - 1))}
+                disabled={page === 1}
+                className='px-3 py-1 rounded bg-slate-800 text-slate-200 disabled:opacity-40'
               >
-                <div className='flex items-start justify-between gap-3 mb-4'>
-                  <div>
-                    <p className='text-xs uppercase tracking-widest text-slate-400'>File</p>
-                    <h2 className='text-xl font-semibold text-blue-50 mt-1'>{record.file_name}</h2>
-                  </div>
-                  <span className='text-xs text-slate-400'>{formatDateTime(record.created_at)}</span>
-                </div>
-
-                <div className='flex items-center gap-3 mb-6'>
-                  <span className={`inline-flex items-center gap-2 font-semibold ${resultStyle.text}`}>
-                    <span className={`h-2.5 w-2.5 rounded-full ${resultStyle.dot}`} />
-                    {resultStyle.label}
-                  </span>
-                  <span className='text-xs uppercase tracking-widest text-slate-500'>|</span>
-                  <span className='text-xs uppercase tracking-widest text-slate-300'>{record.status}</span>
-                </div>
-
-                <div className='grid grid-cols-2 gap-6'>
-                  <div>
-                    <p className='text-xs uppercase tracking-widest text-slate-400 mb-1'>Confidence</p>
-                    <p className='text-3xl font-bold text-blue-300'>{formatConfidence(record.confidence_score)}</p>
-                  </div>
-                  <div className='text-right'>
-                    <p className='text-xs uppercase tracking-widest text-slate-400 mb-1'>Processing</p>
-                    <p className='text-lg font-semibold text-slate-200'>
-                      {record.processing_time_seconds ? `${record.processing_time_seconds}s` : 'N/A'}
-                    </p>
-                    <p className='text-xs text-slate-400'>Elapsed time</p>
-                  </div>
-                </div>
-
-                <div className='mt-6 flex items-center justify-between text-sm text-slate-400'>
-                  <span>ID: {record.id}</span>
-                  <span className='inline-flex items-center gap-1 text-blue-300 group-hover:text-blue-200'>
-                    View report →
-                  </span>
-                </div>
+                Previous
               </button>
-            );
-          })}
-        </div>
+              <button
+                type='button'
+                onClick={() => setPage(p => p + 1)}
+                disabled={page * perPage >= total}
+                className='px-3 py-1 rounded bg-slate-800 text-slate-200 disabled:opacity-40'
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

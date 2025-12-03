@@ -43,6 +43,24 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [user, setUser] = useState<UserResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
+  // DEV: support skipping login for local development
+  // Enable by setting VITE_SKIP_LOGIN=true in UI/.env
+  useEffect(() => {
+    const skip = import.meta.env.VITE_SKIP_LOGIN === 'true' || import.meta.env.VITE_SKIP_LOGIN === true;
+    if (skip) {
+      // Put a mock token and user into storage so rest of app treats user as authenticated
+      const mockToken = import.meta.env.VITE_SKIP_LOGIN_TOKEN ?? 'dev-skip-token';
+      try {
+        localStorage.setItem(TOKEN_KEY, mockToken);
+      } catch (e) {
+        // ignore storage errors in some test environments
+      }
+      // set a lightweight mock user
+      setUser({ id: 'dev-user', email: 'dev@local', full_name: 'Dev User', is_active: true, is_superuser: false });
+      setIsLoading(false);
+    }
+  }, []);
+
   const refreshUser = useCallback(async () => {
     try {
       const userData = await getCurrentUser();

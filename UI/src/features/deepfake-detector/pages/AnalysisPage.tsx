@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import ParticlesBackground from '../components/ParticlesBackground';
 import FuturisticButton from '../components/FuturisticButton';
 import ProgressBar from '../components/ProgressBar';
-import { DetectionRecord, DetectionStatus, fetchDetectionById } from '../api/detection';
+import { DetectionRecord, DetectionStatus, fetchDetectionById, saveDetectionReport } from '../api/detection';
 
 interface AnalysisResult {
   isDeepfake: boolean;
@@ -31,6 +31,8 @@ const AnalysisPage: React.FC = () => {
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [detection, setDetection] = useState<DetectionRecord | null>(initialDetection ?? null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isSaved, setIsSaved] = useState(false);
 
   useEffect(() => {
     if (!detectionId) {
@@ -232,7 +234,7 @@ const AnalysisPage: React.FC = () => {
         </div>
 
         {/* Action Buttons */}
-        <div className='flex justify-center gap-6 flex-wrap'>
+  <div className='flex justify-center gap-6 flex-wrap'>
           <FuturisticButton onClick={() => navigate('/upload')}>
             <svg
               xmlns='http://www.w3.org/2000/svg'
@@ -270,6 +272,36 @@ const AnalysisPage: React.FC = () => {
             </svg>
             Back to Home
           </FuturisticButton>
+          {/* Save Report Button when anonymous and user is authenticated */}
+          {detection && (() => {
+            const token = localStorage.getItem('deepfake_token') || localStorage.getItem('auth_token');
+            const isAnonymous = !detection.user_id;
+            const isAuth = !!token;
+            if (isAuth && isAnonymous && detection.status === 'completed' && !isSaved) {
+              return (
+                <FuturisticButton
+                  onClick={async () => {
+                    if (!detection.id) return;
+                    setIsSaving(true);
+                    try {
+                      await saveDetectionReport(detection.id);
+                      setIsSaved(true);
+                      // optionally refresh detection state
+                    } catch (err) {
+                      alert(err instanceof Error ? err.message : 'Failed to save report');
+                    } finally {
+                      setIsSaving(false);
+                    }
+                  }}
+                  disabled={isSaving}
+                  variant='secondary'
+                >
+                  {isSaving ? 'Saving...' : 'Save Report'}
+                </FuturisticButton>
+              );
+            }
+            return null;
+          })()}
         </div>
 
         {/* Footer */}

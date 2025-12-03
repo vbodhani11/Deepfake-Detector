@@ -1,8 +1,8 @@
 import React from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import ProgressBar from '../components/ProgressBar';
-import { DetectionRecord, DetectionResult } from '../api/detection';
-import { mockDetectionRecords } from '../data/mock-detection-records';
+import { DetectionRecord, DetectionResult, fetchDetectionById } from '../api/detection';
+import { useEffect, useState } from 'react';
 
 const formatFileSize = (size: number): string => {
   if (!Number.isFinite(size)) {
@@ -37,7 +37,58 @@ const ReportDetailPage: React.FC = () => {
   const { reportId } = useParams<{ reportId: string }>();
   const navigate = useNavigate();
 
-  const report = mockDetectionRecords.find(record => record.id === reportId);
+  const [report, setReport] = useState<DetectionRecord | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let isActive = true;
+    const id = reportId;
+    if (!id) return;
+
+    const load = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const r = await fetchDetectionById(id);
+        if (!isActive) return;
+        setReport(r);
+      } catch (err) {
+        if (!isActive) return;
+        setError(err instanceof Error ? err.message : 'Failed to load report');
+      } finally {
+        if (isActive) setLoading(false);
+      }
+    };
+
+    load();
+    return () => {
+      isActive = false;
+    };
+  }, [reportId]);
+
+  if (loading) {
+    return (
+      <div className='min-h-screen bg-animated text-gray-200 flex items-center justify-center deepfake-app'>
+        <div className='text-slate-400'>Loading report...</div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className='min-h-screen bg-animated text-gray-200 flex flex-col items-center justify-center gap-6 deepfake-app'>
+        <p className='text-xl text-rose-300'>Error: {error}</p>
+        <button
+          type='button'
+          onClick={() => navigate('/reports')}
+          className='px-6 py-3 rounded-lg bg-blue-600/80 hover:bg-blue-500 text-white transition-colors'
+        >
+          Back to Reports
+        </button>
+      </div>
+    );
+  }
 
   if (!report) {
     return (
@@ -55,7 +106,7 @@ const ReportDetailPage: React.FC = () => {
   }
 
   const resultLabel = formatResultLabel(report.result ?? undefined);
-  const fakeRatioPercent = report.fake_ratio ? `${Math.round(report.fake_ratio * 100)}%` : '—';
+  const fakeRatioPercent = report.fake_ratio ? `${Math.round(report.fake_ratio * 100)}%` : '\u2014';
   const confidenceValue = report.confidence_score ?? 0;
   const framePredictions = report.frame_predictions ?? [];
 
