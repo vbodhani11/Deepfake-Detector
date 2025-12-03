@@ -46,7 +46,7 @@ export const mockDetectionRecords: DetectionRecord[] = [
     average_fake_probability: 0.73,
     fps_used: 24,
     threshold_used: 0.55,
-    frame_predictions: buildFramePredictions(24, 0, 'fake', 0.7),
+    frame_predictions: { frames: buildFramePredictions(24, 0, 'fake', 0.7) },
   },
   {
     id: 'rpt-241103-002',
@@ -66,7 +66,7 @@ export const mockDetectionRecords: DetectionRecord[] = [
     average_fake_probability: 0.46,
     fps_used: 30,
     threshold_used: 0.6,
-    frame_predictions: buildFramePredictions(18, 10, 'uncertain', 0.48),
+    frame_predictions: { frames: buildFramePredictions(18, 10, 'uncertain', 0.48) },
   },
   {
     id: 'rpt-241101-009',
@@ -86,7 +86,7 @@ export const mockDetectionRecords: DetectionRecord[] = [
     average_fake_probability: 0.18,
     fps_used: 24,
     threshold_used: 0.55,
-    frame_predictions: buildFramePredictions(20, 5, 'real', 0.2),
+    frame_predictions: { frames: buildFramePredictions(20, 5, 'real', 0.2) },
   },
 ];
 
