@@ -18,10 +18,16 @@
    sudo apt-get install -y python3 python3-pip python3-venv ffmpeg
    ```
 
-4. **Clone your repository**
+4. **Clone your repository (including large model files with Git LFS)**
    ```bash
    git clone https://github.com/vbodhani11/Deepfake-Detector.git
    cd Deepfake-Detector
+   
+   # Make sure Git LFS model files (e.g. xception_best.pt) are downloaded
+   sudo apt-get update
+   sudo apt-get install -y git-lfs
+   git lfs install
+   git lfs pull
    ```
 
 5. **Install PostgreSQL** (if not already installed)

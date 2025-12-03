@@ -6,6 +6,10 @@ import ProgressBar from '../components/ProgressBar';
 import FrameByFramePlayer from '../components/FrameByFramePlayer';
 import { DetectionRecord, DetectionStatus, fetchDetectionById } from '../api/detection';
 
+// Use the same base URL strategy as the API modules
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '/api';
+const API_V1_BASE = `${API_BASE_URL.replace(/\/$/, '')}/v1`;
+
 interface AnalysisResult {
   isDeepfake: boolean;
   confidence: number;
@@ -202,18 +206,18 @@ const AnalysisPage: React.FC = () => {
 
                 {/* Frame-by-Frame Video Player for Fake Videos */}
                 {result.isDeepfake &&
-                detection?.media_type === 'video' &&
-                detection?.frame_predictions &&
-                detection.frame_predictions.frames &&
-                detection.frame_predictions.frames.length > 0 && (
-                  <div className='mb-8'>
-                    <FrameByFramePlayer
-                      videoUrl={`/api/v1/detection/${detection.id}/file`}
-                      framePredictions={detection.frame_predictions.frames}
-                      fps={detection.fps_used || 3}
-                    />
-                  </div>
-                )}
+                  detection?.media_type === 'video' &&
+                  detection?.frame_predictions &&
+                  detection.frame_predictions.frames &&
+                  detection.frame_predictions.frames.length > 0 && (
+                    <div className='mb-8'>
+                      <FrameByFramePlayer
+                        videoUrl={`${API_V1_BASE}/detection/${detection.id}/file`}
+                        framePredictions={detection.frame_predictions.frames}
+                        fps={detection.fps_used || 3}
+                      />
+                    </div>
+                  )}
 
                 {/* Analysis Details */}
                 <div className='text-left bg-gray-900 bg-opacity-50 rounded-lg p-6 mb-6'>
