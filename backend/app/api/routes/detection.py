@@ -17,6 +17,15 @@ from app.models.schemas.detection import DetectionCreate, DetectionUpdate
 from app.services.detection import DetectionService
 from app.core.config import settings
 
+# Try to import V2 service (may not be available if dependencies missing)
+try:
+    from app.services.detection_v2 import DetectionServiceV2
+    DETECTION_V2_AVAILABLE = True
+except ImportError as e:
+    DETECTION_V2_AVAILABLE = False
+    DetectionServiceV2 = None
+    print(f"Warning: Detection V2 not available: {e}")
+
 router = APIRouter(prefix="/detection", tags=["detection"])
 
 
@@ -29,8 +38,9 @@ async def analyze_video(
     session: OptionalSessionDep,
     file: UploadFile = File(...),
     fps: int = Form(settings.DEFAULT_FPS),
-    threshold: float = Form(settings.DEFAULT_THRESHOLD),
+    threshold: Optional[float] = Form(None),  # None = use default for selected service
     save_report: bool = Form(False),
+    aggregation_strategy: Optional[str] = Form(None),  # "confident" or "simple"
     current_user: OptionalUser = None,
 ) -> Any:
     """
@@ -89,11 +99,32 @@ async def analyze_video(
         if fps < 1 or fps > 10:
             raise HTTPException(status_code=400, detail="FPS must be between 1 and 10")
 
+        # Determine which service to use
+        use_v2 = settings.USE_DETECTION_V2 and DETECTION_V2_AVAILABLE
+        
+        # Set default threshold based on service
+        if threshold is None:
+            if use_v2:
+                threshold = settings.DETECTION_V2_THRESHOLD
+            else:
+                threshold = settings.DEFAULT_THRESHOLD
+        
         # Validate threshold
         if threshold < 0.0 or threshold > 1.0:
             raise HTTPException(
                 status_code=400, detail="Threshold must be between 0.0 and 1.0"
             )
+        
+        # Validate aggregation strategy if provided
+        if aggregation_strategy and aggregation_strategy not in ["confident", "simple"]:
+            raise HTTPException(
+                status_code=400,
+                detail="aggregation_strategy must be 'confident' or 'simple'"
+            )
+        
+        # Set default aggregation strategy for V2
+        if use_v2 and aggregation_strategy is None:
+            aggregation_strategy = settings.DEFAULT_AGGREGATION_STRATEGY
 
         # Read file content into memory
         file_content = await file.read()
@@ -142,13 +173,38 @@ async def analyze_video(
         }
 
         try:
-            processing_results = detection_service.process_video(
-                video_file_content=file_content,
-                filename=file.filename,
-                fps=fps,
-                threshold=threshold,
-            )
-            results = {**base_results, **(processing_results or {})}
+            # Use V2 service if enabled and available
+            if use_v2:
+                try:
+                    v2_service = DetectionServiceV2()
+                    processing_results = v2_service.process_video(
+                        video_file_content=file_content,
+                        filename=file.filename,
+                        fps=fps,
+                        threshold=threshold,
+                        aggregation_strategy=aggregation_strategy or settings.DEFAULT_AGGREGATION_STRATEGY,
+                        confident_t=settings.CONFIDENT_STRATEGY_THRESHOLD,
+                    )
+                    results = {**base_results, **(processing_results or {})}
+                except Exception as v2_error:
+                    # Fallback to V1 if V2 fails
+                    print(f"V2 processing failed, falling back to V1: {str(v2_error)}")
+                    processing_results = detection_service.process_video(
+                        video_file_content=file_content,
+                        filename=file.filename,
+                        fps=fps,
+                        threshold=threshold,
+                    )
+                    results = {**base_results, **(processing_results or {})}
+            else:
+                # Use V1 service
+                processing_results = detection_service.process_video(
+                    video_file_content=file_content,
+                    filename=file.filename,
+                    fps=fps,
+                    threshold=threshold,
+                )
+                results = {**base_results, **(processing_results or {})}
         except Exception as processing_error:
             print(f"Video processing failed: {str(processing_error)}")
             results = {
@@ -283,20 +339,42 @@ async def upload_media_for_detection(
             f.write(content)
         
         # Process video immediately (like Streamlit does)
-        # Initialize service without repository since we're not storing in DB
-        from app.services.detection import DetectionService
-        
-        # Create a service instance (repository not needed for processing)
-        service = DetectionService(repository=None)
+        # Use V2 if enabled, otherwise V1
+        use_v2 = settings.USE_DETECTION_V2 and DETECTION_V2_AVAILABLE
         
         # Process the video synchronously
         try:
-            processing_result = service.process_video(
-                video_file_content=content,
-                filename=file.filename or "unknown",
-                fps=settings.DEFAULT_FPS,
-                threshold=settings.DEFAULT_THRESHOLD
-            )
+            if use_v2:
+                try:
+                    v2_service = DetectionServiceV2()
+                    processing_result = v2_service.process_video(
+                        video_file_content=content,
+                        filename=file.filename or "unknown",
+                        fps=settings.DEFAULT_FPS,
+                        threshold=settings.DETECTION_V2_THRESHOLD,
+                        aggregation_strategy=settings.DEFAULT_AGGREGATION_STRATEGY,
+                        confident_t=settings.CONFIDENT_STRATEGY_THRESHOLD,
+                    )
+                except Exception as v2_error:
+                    # Fallback to V1 if V2 fails
+                    print(f"V2 processing failed, falling back to V1: {str(v2_error)}")
+                    from app.services.detection import DetectionService
+                    service = DetectionService(repository=None)
+                    processing_result = service.process_video(
+                        video_file_content=content,
+                        filename=file.filename or "unknown",
+                        fps=settings.DEFAULT_FPS,
+                        threshold=settings.DEFAULT_THRESHOLD
+                    )
+            else:
+                from app.services.detection import DetectionService
+                service = DetectionService(repository=None)
+                processing_result = service.process_video(
+                    video_file_content=content,
+                    filename=file.filename or "unknown",
+                    fps=settings.DEFAULT_FPS,
+                    threshold=settings.DEFAULT_THRESHOLD
+                )
             
             # Build response with actual results
             detection_dict = {
@@ -309,7 +387,15 @@ async def upload_media_for_detection(
                 "status": processing_result.get("status", DetectionStatus.COMPLETED),
                 "result": processing_result.get("result"),
                 "confidence_score": processing_result.get("confidence_score"),
+                "average_fake_probability": processing_result.get("average_fake_probability"),
+                "fake_ratio": processing_result.get("fake_ratio"),
+                "total_frames_processed": processing_result.get("total_frames_processed"),
+                "fake_frames": processing_result.get("fake_frames"),
+                "real_frames": processing_result.get("real_frames"),
+                "fps_used": processing_result.get("fps_used"),
+                "threshold_used": processing_result.get("threshold_used"),
                 "processing_time_seconds": processing_result.get("processing_time_seconds"),
+                "frame_predictions": processing_result.get("frame_predictions"),
                 "error_message": processing_result.get("error_message"),
                 "created_at": datetime.utcnow(),
                 "updated_at": datetime.utcnow() if processing_result.get("status") == DetectionStatus.COMPLETED else None,
@@ -425,6 +511,40 @@ def get_detection_by_id(
             status_code=500,
             detail="An error occurred retrieving the detection",
         )
+
+@router.get("/{detection_id}/file")
+async def get_detection_file(
+    detection_id: uuid.UUID,
+) -> Any:
+    """
+    Serve the uploaded file (video/image) for a detection record.
+    Public endpoint, no authentication required.
+    """
+    try:
+        from fastapi.responses import FileResponse
+        from pathlib import Path
+        
+        uploads_dir = Path("uploads/anonymous")
+        matching_files = list(uploads_dir.glob(f"{detection_id}.*"))
+        
+        if not matching_files:
+            raise HTTPException(status_code=404, detail="File not found")
+        
+        file_path = matching_files[0]
+        
+        if not file_path.exists():
+            raise HTTPException(status_code=404, detail="File not found")
+        
+        return FileResponse(
+            path=str(file_path),
+            media_type="video/mp4",  # Could be improved to detect actual type
+            filename=file_path.name
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error serving file: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error serving file")
 
 @router.post("/{detection_id}/save", response_model=DetectionResponse)
 def save_detection_report(

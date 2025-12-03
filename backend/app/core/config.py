@@ -93,5 +93,12 @@ class Settings(BaseSettings):
     MODEL_PATH: str = "model/models/xception_best.pt"
     DEFAULT_FPS: int = 3
     DEFAULT_THRESHOLD: float = 0.5
+    
+    # Detection V2 Configuration
+    USE_DETECTION_V2: bool = True  # Feature flag to use V2 service
+    DEFAULT_AGGREGATION_STRATEGY: str = "confident"  # "confident" or "simple"
+    CONFIDENT_STRATEGY_THRESHOLD: float = 0.8  # Threshold for high-confidence frames
+    DETECTION_V2_THRESHOLD: float = 0.85  # Video-level classification threshold
+    TEMP_DIR_BASE: str | None = None  # None = system temp, or specify path
 
 settings = Settings()
