@@ -24,61 +24,103 @@
    cd Deepfake-Detector
    ```
 
-5. **Set up and start the Backend** (in one terminal/screen session)
+5. **Install PostgreSQL** (if not already installed)
+   ```bash
+   sudo apt-get update
+   sudo apt-get install -y postgresql postgresql-contrib
+   
+   # Start PostgreSQL service
+   sudo systemctl start postgresql
+   sudo systemctl enable postgresql
+   ```
+
+6. **Set up PostgreSQL database**
+   ```bash
+   # Switch to postgres user
+   sudo -u postgres psql
+   
+   # In PostgreSQL prompt, run:
+   CREATE USER deepfake_user WITH PASSWORD 'deepfake_detector';
+   CREATE DATABASE deepfake_detector OWNER deepfake_user;
+   GRANT ALL PRIVILEGES ON DATABASE deepfake_detector TO deepfake_user;
+   \q  # Exit PostgreSQL
+   ```
+
+7. **Set up Backend environment variables**
+   ```bash
+   cd backend
+   cp env.example .env
+   
+   # Edit .env file with your database credentials
+   nano .env
+   # Or use vi: vi .env
+   ```
+   
+   **Update these values in .env:**
+   ```env
+   POSTGRES_SERVER=localhost
+   POSTGRES_PORT=5432
+   POSTGRES_USER=deepfake_user
+   POSTGRES_PASSWORD=deepfake_detector
+   POSTGRES_DB=deepfake_detector
+   POSTGRES_SSL_MODE=disable
+   
+   # Update CORS to include your frontend URL
+   BACKEND_CORS_ORIGINS=["http://35.243.177.147:8080","http://localhost:8080"]
+   
+   # Set a secure secret key (generate one with this command):
+   # openssl rand -hex 32
+   SECRET_KEY=your-random-secret-key-here-generate-with-openssl-rand-hex-32
+   ```
+   
+   **Generate a secure SECRET_KEY:**
+   ```bash
+   openssl rand -hex 32
+   # Copy the output and paste it as SECRET_KEY in .env
+   ```
+
+8. **Set up and start the Backend** (in one terminal/screen session)
    ```bash
    cd backend
    python3 -m venv venv
    source venv/bin/activate
    pip install -r requirements.txt
    
+   # Run database migrations
+   alembic upgrade head
+   
    # Start backend server (runs on port 8000)
    uvicorn app.main:app --host 0.0.0.0 --port 8000
    ```
    **Keep this running!** The backend needs to stay active.
 
-6. **Set up and start the Frontend** (in a NEW terminal/screen session)
+9. **Set up and start the Frontend** (in a NEW terminal/screen session)
    
-   **Option A: Using screen (recommended - keeps services running)**
+   **Using screen (recommended - keeps services running):**
    ```bash
-   # Install screen to run multiple sessions
+   # Install screen if not already installed
    sudo apt-get install -y screen
    
-   # Start backend in a screen session
-   screen -S backend
-   cd backend
-   source venv/bin/activate
-   uvicorn app.main:app --host 0.0.0.0 --port 8000
-   # Press Ctrl+A then D to detach
-   
-   # Start frontend in another screen session
+   # Start frontend in a screen session
    screen -S frontend
-   cd UI
+   cd ~/Deepfake-Detector/UI
    npm install
    npm run build
    cd dist
-   python3 -m http.server 8080
+   python3 -m http.server 8080 --bind 0.0.0.0
    # Press Ctrl+A then D to detach
    ```
    
-   **Option B: Using nginx for frontend (better for production)**
+   **Note:** If you haven't started the backend in screen yet, do that first:
    ```bash
-   # Build frontend
-   cd UI
-   npm install
-   npm run build
-   
-   # Install nginx
-   sudo apt-get install -y nginx
-   
-   # Copy built files
-   sudo cp -r dist/* /var/www/html/
-   
-   # Start nginx
-   sudo systemctl start nginx
-   sudo systemctl enable nginx
+   screen -S backend
+   cd ~/Deepfake-Detector/backend
+   source venv/bin/activate
+   uvicorn app.main:app --host 0.0.0.0 --port 8000
+   # Press Ctrl+A then D to detach
    ```
 
-7. **Configure firewall** to allow HTTP/HTTPS traffic:
+10. **Configure firewall** to allow HTTP/HTTPS traffic:
    ```bash
    # Allow HTTP (port 80) and HTTPS (port 443)
    gcloud compute firewall-rules create allow-http-https \
@@ -87,27 +129,27 @@
      --target-tags http-server
    
    # Add tag to your VM (replace YOUR_VM_NAME and YOUR_ZONE)
-   gcloud compute instances add-tags YOUR_VM_NAME \
-     --zone YOUR_ZONE \
+   gcloud compute instances add-tags instance-20250918-020237 \
+     --zone us-east1-c \
      --tags http-server
    ```
 
-8. **Get your public IP**:
+11. **Get your public IP**:
    ```bash
    # In VM, get external IP
    curl -H "Metadata-Flavor: Google" http://169.254.169.254/computeMetadata/v1/instance/network-interfaces/0/access-configs/0/external-ip
    ```
 
-9. **Access your app**:
-   - **Frontend**: `http://YOUR_EXTERNAL_IP` (if using nginx) or `http://YOUR_EXTERNAL_IP:8080` (if using Python server)
-   - **Backend API**: `http://YOUR_EXTERNAL_IP:8000`
-   - **API Docs**: `http://YOUR_EXTERNAL_IP:8000/docs`
+12. **Access your app**:
+   - **Frontend**: `http://YOUR_EXTERNAL_IP` (if using nginx) or `http://35.243.177.147:8080` (if using Python server)
+   - **Backend API**: `http://35.243.177.147:8000`
+   - **API Docs**: `http://35.243.177.147:8000/docs`
 
-10. **Update frontend API URL** (if backend is on different port/IP):
+13. **Update frontend API URL** (if backend is on different port/IP):
     ```bash
     # Create .env.production file
     cd UI
-    echo "VITE_API_BASE_URL=http://YOUR_EXTERNAL_IP:8000/api" > .env.production
+    echo "VITE_API_BASE_URL=http://35.243.177.147:8000/api" > .env.production
     
     # Rebuild
     npm run build
