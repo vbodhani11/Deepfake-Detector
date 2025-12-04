@@ -91,7 +91,20 @@ const LandingPage: React.FC = () => {
               <button
                 type='button'
                 key={index}
-                onClick={() => feature.targetPath && navigate(feature.targetPath)}
+                onClick={() => {
+                  if (feature.targetPath === '/reports') {
+                    const token = localStorage.getItem('deepfake_token') || localStorage.getItem('auth_token');
+                    if (token) {
+                      navigate(feature.targetPath);
+                      return;
+                    }
+                    // Prompt login flow
+                    alert('Please login to view your reports');
+                    navigate('/login');
+                    return;
+                  }
+                  feature.targetPath && navigate(feature.targetPath);
+                }}
                 className={`text-left bg-gray-800 bg-opacity-60 rounded-lg p-6 backdrop-blur-sm
                            feature-card-hover group transition-all duration-300 ${
                              feature.targetPath ? 'cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-400' : ''
