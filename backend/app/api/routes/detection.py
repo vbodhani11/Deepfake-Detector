@@ -62,14 +62,9 @@ async def analyze_video(
         else:
             detection_service = DetectionService()
 
+        # If user is not authenticated but asked to save, just proceed without saving
         if save_report and current_user is None:
-            raise HTTPException(
-                status_code=401,
-                detail=(
-                    "Authentication required to save reports. "
-                    "Please login or set save_report=false"
-                ),
-            )
+            save_report = False
 
         # Validate file size
         if file.size and file.size > settings.MAX_FILE_SIZE_MB * 1024 * 1024:
@@ -537,6 +532,15 @@ async def upload_media_for_detection(
                 "updated_at": None,
             }
         
+        # Persist anonymous detection results to a sidecar JSON for retrieval
+        try:
+            import json
+            sidecar_path = file_path.with_suffix(file_path.suffix + ".json")
+            with open(sidecar_path, "w") as f:
+                json.dump(detection_dict, f, default=str)
+        except Exception as sidecar_err:
+            print(f"Warning: failed to write anonymous detection sidecar for {detection_id}: {sidecar_err}")
+        
         return DetectionResponse(**detection_dict)
 
     except ValueError as e:
@@ -647,6 +651,20 @@ def get_detection_by_id(
             file_path = matching_files[0]
             file_size = file_path.stat().st_size if file_path.exists() else 0
             file_name = file_path.name
+            
+            # Try to load sidecar JSON with results if it exists
+            detection_dict = None
+            sidecar_path = file_path.with_suffix(file_path.suffix + ".json")
+            if sidecar_path.exists():
+                try:
+                    import json
+                    with open(sidecar_path, "r") as f:
+                        detection_dict = json.load(f)
+                except Exception as sidecar_err:
+                    print(f"Warning: failed to read sidecar for {detection_id}: {sidecar_err}")
+            
+            if detection_dict:
+                return DetectionResponse(**detection_dict)
             
             detection_dict = {
                 "id": detection_id,

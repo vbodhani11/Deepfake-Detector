@@ -387,3 +387,4 @@ atlassian-ide-plugin.xml
 .idea/**/markdown-navigator/
 .idea/$CACHE_FILE$
 .idea/codestream.xml
+backend/.env.prod

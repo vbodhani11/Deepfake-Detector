@@ -255,7 +255,13 @@ const UploadPage: React.FC = () => {
                 URL.revokeObjectURL(uploadedFile.preview);
               }
               
-              navigate('/analysis', {
+              const redirectPath = `/analysis?detectionId=${encodeURIComponent(detectionId)}`;
+              // For guests, remember pending save so it can be claimed after login
+              const token = localStorage.getItem('deepfake_token') || localStorage.getItem('auth_token');
+              if (!token) {
+                localStorage.setItem('pending_save_detection_id', detectionId);
+              }
+              navigate(redirectPath, {
                 state: {
                   detectionId,
                   fileName,

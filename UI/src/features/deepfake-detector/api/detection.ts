@@ -139,18 +139,13 @@ export const uploadDetection = (file: File, options?: UploadOptions): Promise<De
   const formData = new FormData();
   formData.append('file', file);
   
-  // Check if user is authenticated - if so, use /analyze endpoint with save_report=true
+  // Check if user is authenticated
   const token = resolveAuthToken();
   const isAuthenticated = !!token;
   
+  // Always use /analyze; if guest, backend will process without saving
   if (isAuthenticated) {
-    // Use /analyze endpoint which supports saving reports for authenticated users
-    formData.append('save_report', 'true'); // FormData sends as string, backend converts to bool
-    // Note: /analyze doesn't require media_type, it infers it from the file
-    // fps and threshold use defaults if not provided
-  } else {
-    // Use /upload endpoint for anonymous users
-    formData.append('media_type', inferMediaType(file));
+    formData.append('save_report', 'true'); // request saving when logged in
   }
   
   if (options?.description) {
@@ -159,8 +154,8 @@ export const uploadDetection = (file: File, options?: UploadOptions): Promise<De
 
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
-    // Use /analyze if authenticated (supports save_report), otherwise use /upload
-    const endpoint = isAuthenticated ? `${API_V1_BASE}/detection/analyze` : `${API_V1_BASE}/detection/upload`;
+    // Always call /analyze; backend tolerates missing auth and save_report flag
+    const endpoint = `${API_V1_BASE}/detection/analyze`;
     xhr.open('POST', endpoint);
     
     // Add authentication header if user is logged in
@@ -224,6 +219,21 @@ export const fetchUserDetections = async (
   if (!token) {
     throw new Error('Authentication required to view reports');
   }
+
+  // Auto-claim any pending guest detection after login
+  if (typeof window !== 'undefined') {
+    const pendingId = window.localStorage.getItem('pending_save_detection_id');
+    if (pendingId) {
+      try {
+        await saveDetectionReport(pendingId);
+      } catch (err) {
+        console.error('Failed to save pending guest detection after login', err);
+      } finally {
+        window.localStorage.removeItem('pending_save_detection_id');
+      }
+    }
+  }
+
   if (SKIP_LOGIN) {
     const items = mockDetections.slice((page - 1) * perPage, page * perPage);
     return Promise.resolve({ items, total: mockDetections.length, page, per_page: perPage });

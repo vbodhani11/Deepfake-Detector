@@ -17,7 +17,10 @@ const formatConfidence = (value?: number | null): string => {
   if (typeof value !== 'number') {
     return '—';
   }
-  return `${value}%`;
+  // Normalize: if value is between 0-1, convert to percentage
+  const normalized = value > 1 ? value : value * 100;
+  // Format to 2 decimal places max
+  return `${normalized.toFixed(2)}%`;
 };
 
 const ReportsPage: React.FC = () => {
@@ -134,14 +137,16 @@ const ReportsPage: React.FC = () => {
                     </div>
 
                     <div className='grid grid-cols-2 gap-6'>
-                      <div>
+                      <div className='min-w-0'>
                         <p className='text-xs uppercase tracking-widest text-slate-400 mb-1'>Confidence</p>
-                        <p className='text-3xl font-bold text-blue-300'>{formatConfidence(record.confidence_score)}</p>
+                        <p className='text-3xl font-bold text-blue-300 truncate' title={formatConfidence(record.confidence_score)}>
+                          {formatConfidence(record.confidence_score)}
+                        </p>
                       </div>
-                      <div className='text-right'>
+                      <div className='text-right min-w-0'>
                         <p className='text-xs uppercase tracking-widest text-slate-400 mb-1'>Processing</p>
                         <p className='text-lg font-semibold text-slate-200'>
-                          {record.processing_time_seconds ? `${record.processing_time_seconds}s` : 'N/A'}
+                          {record.processing_time_seconds ? `${record.processing_time_seconds.toFixed(2)}s` : 'N/A'}
                         </p>
                         <p className='text-xs text-slate-400'>Elapsed time</p>
                       </div>

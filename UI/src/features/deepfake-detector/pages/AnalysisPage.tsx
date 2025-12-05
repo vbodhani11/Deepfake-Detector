@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import ParticlesBackground from '../components/ParticlesBackground';
 import FuturisticButton from '../components/FuturisticButton';
 import ProgressBar from '../components/ProgressBar';
@@ -26,8 +26,9 @@ interface LocationState {
 const AnalysisPage: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
+  const [searchParams] = useSearchParams();
   const locationState = location.state as LocationState;
-  const detectionId = locationState?.detectionId;
+  const detectionId = locationState?.detectionId || searchParams.get('detectionId') || undefined;
   const initialDetection = locationState?.initialDetection;
   const uploadedFileName = locationState?.fileName || initialDetection?.file_name;
 
@@ -41,6 +42,12 @@ const AnalysisPage: React.FC = () => {
   const [isSaved, setIsSaved] = useState(false);
   const [elapsedTime, setElapsedTime] = useState(0);
   const [progressAnimationInterval, setProgressAnimationInterval] = useState<number | undefined>(undefined);
+
+  const token =
+    (typeof window !== 'undefined' && window.localStorage
+      ? window.localStorage.getItem('deepfake_token') || window.localStorage.getItem('auth_token')
+      : null) || null;
+  const isAuth = !!token;
 
   useEffect(() => {
     if (!detectionId) {
@@ -256,6 +263,49 @@ const AnalysisPage: React.FC = () => {
     };
   }, [detectionId, initialDetection, navigate]);
 
+  // Auto-save after login if there was a pending detection
+  useEffect(() => {
+    if (!detectionId || !isAuth || isSaved || isSaving) return;
+    const pendingId = typeof window !== 'undefined' ? window.localStorage.getItem('pending_save_detection_id') : null;
+    if (pendingId && pendingId === detectionId && detection?.status === 'completed' && !detection.user_id) {
+      (async () => {
+        try {
+          setIsSaving(true);
+          const saved = await saveDetectionReport(detectionId);
+          setDetection(saved);
+          setIsSaved(true);
+          window.localStorage.removeItem('pending_save_detection_id');
+        } catch (err) {
+          console.error('Auto-save failed', err);
+        } finally {
+          setIsSaving(false);
+        }
+      })();
+    }
+  }, [detectionId, isAuth, detection, isSaved, isSaving]);
+
+  // Auto-save immediately for authenticated users on completed anonymous detections
+  useEffect(() => {
+    if (!isAuth || !detectionId || isSaved || isSaving) return;
+    if (detection?.status === 'completed' && !detection.user_id) {
+      (async () => {
+        try {
+          setIsSaving(true);
+          const saved = await saveDetectionReport(detectionId);
+          setDetection(saved);
+          setIsSaved(true);
+          if (typeof window !== 'undefined') {
+            window.localStorage.removeItem('pending_save_detection_id');
+          }
+        } catch (err) {
+          console.error('Auto-save (authenticated) failed', err);
+        } finally {
+          setIsSaving(false);
+        }
+      })();
+    }
+  }, [isAuth, detectionId, detection, isSaved, isSaving]);
+
   if (!detectionId) {
     return null;
   }
@@ -328,19 +378,25 @@ const AnalysisPage: React.FC = () => {
 
                 <div className='mb-6'>
                   <p className='text-2xl mb-2'>Confidence Score</p>
-                  <div className='w-full bg-gray-700 rounded-full h-4 mb-2'>
+                  <div className='w-full bg-gray-700 rounded-full h-4 mb-2 overflow-hidden'>
                     <div
-                      className={`h-4 rounded-full transition-all duration-1000 ${
+                      className={`h-4 transition-all duration-700 ${
                         result.isDeepfake
                           ? 'bg-gradient-to-r from-red-600 to-red-400'
                           : 'bg-gradient-to-r from-green-600 to-green-400'
                       }`}
-                      style={{ width: `${result.confidence}%` }}
+                      style={{ width: `${Math.min(Math.max(result.confidence, 0), 100)}%` }}
                     />
                   </div>
-                  <p className='text-xl font-semibold'>
-                    {result.confidence.toFixed(1)}% {result.isDeepfake ? 'Deepfake' : 'Authentic'}
-                  </p>
+                  <div className='flex flex-wrap items-center justify-center gap-2 text-sm text-gray-200'>
+                    <span className='font-semibold'>
+                      {result.confidence.toFixed(2)}% {result.isDeepfake ? 'Deepfake' : 'Authentic'}
+                    </span>
+                    <span className='text-gray-500'>·</span>
+                    <span className='font-semibold'>
+                      {(100 - result.confidence).toFixed(2)}% {result.isDeepfake ? 'Authentic' : 'Deepfake'}
+                    </span>
+                  </div>
                 </div>
 
                 {/* Frame-by-Frame Analysis for Fake Videos */}
@@ -428,36 +484,27 @@ const AnalysisPage: React.FC = () => {
             </svg>
             Back to Home
           </FuturisticButton>
-          {/* Save Report Button when anonymous and user is authenticated */}
-          {detection && (() => {
-            const token = localStorage.getItem('deepfake_token') || localStorage.getItem('auth_token');
-            const isAnonymous = !detection.user_id;
-            const isAuth = !!token;
-            if (isAuth && isAnonymous && detection.status === 'completed' && !isSaved) {
-              return (
-                <FuturisticButton
-                  onClick={async () => {
-                    if (!detection.id) return;
-                    setIsSaving(true);
-                    try {
-                      await saveDetectionReport(detection.id);
-                      setIsSaved(true);
-                      // optionally refresh detection state
-                    } catch (err) {
-                      alert(err instanceof Error ? err.message : 'Failed to save report');
-                    } finally {
-                      setIsSaving(false);
-                    }
-                  }}
-                  disabled={isSaving}
-                  variant='secondary'
-                >
-                  {isSaving ? 'Saving...' : 'Save Report'}
-                </FuturisticButton>
-              );
-            }
-            return null;
-          })()}
+          {/* Save Report CTA */}
+          {detection && detection.status === 'completed' && (
+            !isAuth ? (
+              <FuturisticButton
+                variant='secondary'
+                onClick={() => {
+                  if (typeof window !== 'undefined' && detection.id) {
+                    window.localStorage.setItem('pending_save_detection_id', detection.id);
+                  }
+                  const redirectUrl = `/analysis?detectionId=${encodeURIComponent(detection.id || '')}`;
+                  navigate(`/login?redirect=${encodeURIComponent(redirectUrl)}`);
+                }}
+              >
+                Save this report (Sign in)
+              </FuturisticButton>
+            ) : (
+              isSaved && (
+                <div className='text-green-300 text-sm font-semibold'>Report saved to your account.</div>
+              )
+            )
+          )}
         </div>
 
         {/* Footer */}
