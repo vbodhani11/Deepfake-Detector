@@ -77,6 +77,14 @@
    # Set a secure secret key (generate one with this command):
    # openssl rand -hex 32
    SECRET_KEY=your-random-secret-key-here-generate-with-openssl-rand-hex-32
+   
+   # Memory Optimization Settings (CRITICAL for 3.8GB RAM VMs)
+   # FP16 reduces memory by ~50% with minimal accuracy loss
+   USE_FP16=true
+   # Process crops in smaller batches to avoid OOM
+   INFERENCE_BATCH_SIZE=8
+   # INT8 quantization (optional, more memory savings but slight accuracy loss)
+   # USE_QUANTIZATION=false
    ```
    
    **Generate a secure SECRET_KEY:**

@@ -15,8 +15,22 @@ const DeepfakeRoutes: React.FC = () => {
       <Route path='/' element={<LandingPage />} />
       <Route path='/upload' element={<UploadPage />} />
       <Route path='/analysis' element={<AnalysisPage />} />
-      <Route path='/reports' element={<ReportsPage />} />
-      <Route path='/reports/:reportId' element={<ReportDetailPage />} />
+      <Route 
+        path='/reports' 
+        element={
+          <ProtectedRoute>
+            <ReportsPage />
+          </ProtectedRoute>
+        } 
+      />
+      <Route 
+        path='/reports/:reportId' 
+        element={
+          <ProtectedRoute>
+            <ReportDetailPage />
+          </ProtectedRoute>
+        } 
+      />
       <Route path='/login' element={<LoginPage />} />
       <Route path="/signup" element={<SignupPage />} />
     </Routes>

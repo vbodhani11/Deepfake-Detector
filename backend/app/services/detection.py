@@ -203,7 +203,7 @@ class DetectionService:
         ]
 
         return DetectionListResponse(
-            detections=detection_responses,
+            items=detection_responses,  # Changed from 'detections' to 'items' to match frontend
             total=total,
             page=page,
             per_page=per_page
@@ -225,7 +225,7 @@ class DetectionService:
         ]
 
         return DetectionListResponse(
-            detections=detection_responses,
+            items=detection_responses,  # Changed from 'detections' to 'items' to match frontend
             total=total,
             page=page,
             per_page=per_page

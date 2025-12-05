@@ -50,7 +50,7 @@ class DetectionUpdate(BaseModel):
 
 class DetectionListResponse(BaseModel):
     """Response model for listing detections"""
-    detections: list[DetectionResponse]
+    items: list[DetectionResponse]  # Changed from 'detections' to 'items' to match frontend
     total: int
     page: int
     per_page: int

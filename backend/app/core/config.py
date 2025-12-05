@@ -66,6 +66,7 @@ class Settings(BaseSettings):
 
     # File Upload Configuration
     MAX_FILE_SIZE_MB: int = 50
+    MAX_VIDEO_DURATION_SECONDS: int = 10  # Limit video duration to 10 seconds for memory efficiency
     ALLOWED_VIDEO_EXTENSIONS: list[str] = [".mp4", ".avi", ".mov", ".mkv"]
     ALLOWED_IMAGE_EXTENSIONS: list[str] = [".jpg", ".jpeg", ".png", ".bmp"]
 
@@ -100,5 +101,10 @@ class Settings(BaseSettings):
     CONFIDENT_STRATEGY_THRESHOLD: float = 0.8  # Threshold for high-confidence frames
     DETECTION_V2_THRESHOLD: float = 0.85  # Video-level classification threshold
     TEMP_DIR_BASE: str | None = None  # None = system temp, or specify path
+    
+    # Memory Optimization Configuration
+    INFERENCE_BATCH_SIZE: int = 8  # Process crops in batches to reduce RAM usage
+    USE_FP16: bool = True  # Use half-precision (FP16) to reduce memory by ~50%
+    USE_QUANTIZATION: bool = False  # Use INT8 quantization (even more memory savings, slight accuracy loss)
 
 settings = Settings()

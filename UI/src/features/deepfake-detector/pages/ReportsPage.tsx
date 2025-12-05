@@ -41,10 +41,13 @@ const ReportsPage: React.FC = () => {
       try {
         const resp = await fetchUserDetections(page, perPage);
         if (!isActive) return;
-        setReports(resp.items);
-        setTotal(resp.total ?? resp.items.length);
+        setReports(resp?.items ?? []);
+        setTotal(resp?.total ?? resp?.items?.length ?? 0);
       } catch (err) {
+        if (!isActive) return;
         setError(err instanceof Error ? err.message : 'Failed to load reports');
+        setReports([]); // Ensure reports is always an array
+        setTotal(0);
       } finally {
         if (isActive) setLoading(false);
       }
@@ -88,8 +91,19 @@ const ReportsPage: React.FC = () => {
           {loading ? (
             <div className='py-12 text-center text-slate-400'>Loading reports...</div>
           ) : error ? (
-            <div className='py-12 text-center text-rose-300'>Error: {error}</div>
-          ) : !reports.length ? (
+            <div className='py-12 text-center'>
+              <div className='bg-red-900/30 border border-red-500/50 rounded-lg p-6 max-w-2xl mx-auto'>
+                <p className='text-rose-300 text-lg font-semibold mb-2'>Error loading reports</p>
+                <p className='text-rose-400 text-sm'>{error}</p>
+                <button
+                  onClick={() => window.location.reload()}
+                  className='mt-4 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors'
+                >
+                  Retry
+                </button>
+              </div>
+            </div>
+          ) : !reports || !reports.length ? (
             <div className='py-24 text-center text-slate-400'>No saved reports yet.</div>
           ) : (
             <div className='grid grid-cols-1 md:grid-cols-2 gap-6'>

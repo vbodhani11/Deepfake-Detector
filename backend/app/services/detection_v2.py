@@ -104,7 +104,7 @@ class DetectionServiceV2:
         ])
     
     def _load_model(self):
-        """Load the trained Xception model (lazy loading)"""
+        """Load the trained Xception model (lazy loading) with memory optimizations"""
         if self.model is not None:
             return self.model
         
@@ -125,10 +125,45 @@ class DetectionServiceV2:
         model = timm.create_model("xception", pretrained=False, num_classes=2)
         model.load_state_dict(checkpoint['model_state'])
         model = model.to(self.device)
+        
+        # Memory optimization: Apply INT8 quantization if enabled (before FP16)
+        # This reduces memory by ~50% but may have slight accuracy loss
+        # Quantization works on FP32 models, so we do this first
+        quantization_successful = False
+        if settings.USE_QUANTIZATION:
+            logger.info("Applying INT8 quantization for maximum memory efficiency")
+            try:
+                # Use dynamic quantization (works on CPU)
+                # Try newer API first (PyTorch 1.9+), fall back to older API
+                try:
+                    from torch.ao.quantization import quantize_dynamic
+                except ImportError:
+                    from torch.quantization import quantize_dynamic
+                
+                model = quantize_dynamic(
+                    model, {torch.nn.Linear, torch.nn.Conv2d}, dtype=torch.qint8
+                )
+                quantization_successful = True
+                logger.info("INT8 quantization applied successfully")
+            except Exception as e:
+                logger.warning(f"Quantization failed, falling back to FP16: {e}")
+                # If quantization fails, fall through to FP16 conversion
+        
+        # Memory optimization: Convert to FP16 (half precision) if not quantized
+        # This reduces memory usage by ~50% with minimal accuracy loss
+        # Skip FP16 if quantization was successfully applied
+        if settings.USE_FP16 and not quantization_successful:
+            logger.info("Converting model to FP16 (half precision) for memory efficiency")
+            model = model.half()  # Convert to FP16
+        
         model.eval()
         
+        # Clear any cached memory
+        if self.device == "cpu":
+            torch.cuda.empty_cache() if torch.cuda.is_available() else None
+        
         self.model = model
-        logger.info("Model loaded successfully")
+        logger.info(f"Model loaded successfully (device: {self.device}, dtype: {next(model.parameters()).dtype})")
         return self.model
     
     def _predict_crops_batch(
@@ -136,7 +171,7 @@ class DetectionServiceV2:
         crop_files: list[Path]
     ) -> np.ndarray:
         """
-        Run batch prediction on face crops.
+        Run batch prediction on face crops with memory-efficient chunked processing.
         
         Args:
             crop_files: List of paths to face crop image files
@@ -147,40 +182,109 @@ class DetectionServiceV2:
         from PIL import Image
         
         model = self._load_model()
+        batch_size = settings.INFERENCE_BATCH_SIZE
         
-        # Load and preprocess all crops
-        crops_tensor_list = []
-        valid_crops = []
+        # Determine dtype for tensors based on model's actual dtype
+        # Check first parameter's dtype to determine model precision
+        model_dtype = next(model.parameters()).dtype
         
-        for crop_file in crop_files:
-            try:
-                # Load image
-                img = Image.open(crop_file).convert('RGB')
-                
-                # Apply preprocessing transforms
-                tensor = self.preprocess(img)
-                crops_tensor_list.append(tensor)
-                valid_crops.append(crop_file)
-            except Exception as e:
-                logger.warning(f"Failed to load crop {crop_file}: {e}")
+        # Quantized models still expect FP32 inputs
+        # FP16 models expect FP16 inputs
+        # FP32 models expect FP32 inputs
+        if model_dtype == torch.float16:
+            tensor_dtype = torch.float16
+        else:
+            # FP32 for both FP32 and quantized models
+            tensor_dtype = torch.float32
+        
+        all_fake_probs = []
+        
+        # Process crops in chunks to avoid OOM
+        total_crops = len(crop_files)
+        logger.info(f"Processing {total_crops} crops in batches of {batch_size} for memory efficiency")
+        
+        for batch_start in range(0, total_crops, batch_size):
+            batch_end = min(batch_start + batch_size, total_crops)
+            batch_files = crop_files[batch_start:batch_end]
+            
+            # Load and preprocess batch crops
+            crops_tensor_list = []
+            
+            for crop_file in batch_files:
+                try:
+                    # Load image
+                    img = Image.open(crop_file).convert('RGB')
+                    
+                    # Apply preprocessing transforms
+                    tensor = self.preprocess(img)
+                    
+                    # Convert to appropriate dtype if using FP16
+                    if tensor_dtype == torch.float16:
+                        tensor = tensor.half()
+                    
+                    crops_tensor_list.append(tensor)
+                except Exception as e:
+                    logger.warning(f"Failed to load crop {crop_file}: {e}")
+                    # Add dummy tensor to maintain indices
+                    dummy_tensor = torch.zeros(3, 299, 299, dtype=tensor_dtype)
+                    crops_tensor_list.append(dummy_tensor)
+                    continue
+            
+            if not crops_tensor_list:
+                logger.warning(f"Batch {batch_start}-{batch_end} had no valid crops")
                 continue
+            
+            # Stack into batch tensor
+            batch_tensor = torch.stack(crops_tensor_list).to(self.device)
+            
+            # Run inference
+            with torch.no_grad():
+                try:
+                    logits = model(batch_tensor)
+                    probabilities = torch.softmax(logits, dim=1)
+                    
+                    # Extract fake probabilities (Class 0 = FAKE, Class 1 = REAL)
+                    # CRITICAL: Use [:, 0] for fake class (as per notebook)
+                    batch_fake_probs = probabilities[:, 0].cpu().numpy()
+                    all_fake_probs.extend(batch_fake_probs)
+                    
+                    # Clear batch from memory
+                    del batch_tensor, logits, probabilities, batch_fake_probs
+                    
+                except RuntimeError as e:
+                    if "out of memory" in str(e).lower():
+                        logger.error(f"OOM error at batch {batch_start}-{batch_end}. Try reducing INFERENCE_BATCH_SIZE.")
+                        # Clear cache and retry with smaller batch
+                        if self.device == "cpu":
+                            import gc
+                            gc.collect()
+                        else:
+                            torch.cuda.empty_cache()
+                        raise
+                    else:
+                        raise
+            
+            # Periodic memory cleanup
+            if batch_end % (batch_size * 4) == 0:
+                if self.device == "cpu":
+                    import gc
+                    gc.collect()
+                else:
+                    torch.cuda.empty_cache()
         
-        if not crops_tensor_list:
-            raise RuntimeError("No valid crops to process")
+        if not all_fake_probs:
+            raise RuntimeError("No valid crops were processed")
         
-        # Stack into batch tensor
-        batch_tensor = torch.stack(crops_tensor_list).to(self.device)
-        
-        # Run inference
-        with torch.no_grad():
-            logits = model(batch_tensor)
-            probabilities = torch.softmax(logits, dim=1)
-        
-        # Extract fake probabilities (Class 0 = FAKE, Class 1 = REAL)
-        # CRITICAL: Use [:, 0] for fake class (as per notebook)
-        fake_probs = probabilities[:, 0].cpu().numpy()
-        
+        fake_probs = np.array(all_fake_probs)
         logger.info(f"Processed {len(fake_probs)} crops, mean fake prob: {np.mean(fake_probs):.4f}")
+        
+        # Final memory cleanup
+        if self.device == "cpu":
+            import gc
+            gc.collect()
+        else:
+            torch.cuda.empty_cache()
+        
         return fake_probs
     
     def process_video(

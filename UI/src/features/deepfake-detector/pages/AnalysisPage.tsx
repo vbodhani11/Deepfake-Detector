@@ -3,7 +3,13 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import ParticlesBackground from '../components/ParticlesBackground';
 import FuturisticButton from '../components/FuturisticButton';
 import ProgressBar from '../components/ProgressBar';
+import AnalysisProgress from '../components/AnalysisProgress';
+import FrameByFramePlayer from '../components/FrameByFramePlayer';
 import { DetectionRecord, DetectionStatus, fetchDetectionById, saveDetectionReport } from '../api/detection';
+
+// API base URL configuration (consistent with detection.ts)
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '/api';
+const API_V1_BASE = `${API_BASE_URL.replace(/\/$/, '')}/v1`;
 
 interface AnalysisResult {
   isDeepfake: boolean;
@@ -26,13 +32,15 @@ const AnalysisPage: React.FC = () => {
   const uploadedFileName = locationState?.fileName || initialDetection?.file_name;
 
   const [isAnalyzing, setIsAnalyzing] = useState(true);
-  const [analysisProgress, setAnalysisProgress] = useState(0);
+  const [analysisProgress, setAnalysisProgress] = useState(10); // Start at 10% so it's clearly visible
   const [analysisStatus, setAnalysisStatus] = useState('Initializing analysis...');
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [detection, setDetection] = useState<DetectionRecord | null>(initialDetection ?? null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
+  const [elapsedTime, setElapsedTime] = useState(0);
+  const [progressAnimationInterval, setProgressAnimationInterval] = useState<number | undefined>(undefined);
 
   useEffect(() => {
     if (!detectionId) {
@@ -41,13 +49,97 @@ const AnalysisPage: React.FC = () => {
     }
 
     let pollTimeout: number | undefined;
+    let elapsedInterval: number | undefined;
     let isActive = true;
+    const startTime = Date.now();
 
     const statusMessages: Record<DetectionStatus, string> = {
-      pending: 'Waiting for the detection pipeline to start...',
-      processing: 'Running deepfake detection models...',
+      pending: 'Initializing detection pipeline...',
+      processing: 'Analyzing video frames with AI models...',
       completed: 'Analysis complete!',
       failed: 'Analysis failed',
+    };
+
+    // Simulate realistic progress based on status
+    const simulateProgress = (status: DetectionStatus, currentProgress: number): number => {
+      if (status === 'completed') return 100;
+      if (status === 'failed') return currentProgress;
+      if (status === 'pending') {
+        // Slowly increase from 0-20% while pending
+        return Math.min(20, currentProgress + 1.5);
+      }
+      if (status === 'processing') {
+        // Gradually increase from 20-95% while processing
+        if (currentProgress < 20) return 20;
+        return Math.min(95, currentProgress + 2);
+      }
+      return currentProgress;
+    };
+
+    // Continuous progress animation to show activity - uses ref to track detection status
+    let progressInterval: number | undefined;
+    let currentDetectionRef: DetectionRecord | null = initialDetection ?? detection;
+    
+    const startProgressAnimation = () => {
+      // Clear any existing interval first
+      setProgressAnimationInterval(prev => {
+        if (prev) {
+          clearInterval(prev);
+        }
+        return undefined;
+      });
+      
+      // Start new interval
+      const interval = window.setInterval(() => {
+        setAnalysisProgress(prev => {
+          // Check current detection status from ref
+          const currentStatus = currentDetectionRef?.status;
+          
+          // Don't animate if completed or failed
+          if (currentStatus === 'completed' || currentStatus === 'failed') {
+            return prev;
+          }
+          
+          // Don't animate if already at max
+          if (prev >= 95) return prev;
+          
+          // Determine increment and max based on status
+          let increment: number;
+          let maxProgress: number;
+          
+          if (currentStatus === 'processing') {
+            increment = 1.2; // Faster increment for processing
+            maxProgress = 95;
+          } else if (currentStatus === 'pending') {
+            increment = 0.6; // Slower for pending
+            maxProgress = 20;
+          } else {
+            // Default for unknown status
+            increment = 0.5;
+            maxProgress = 20;
+          }
+          
+          const newProgress = Math.min(prev + increment, maxProgress);
+          return newProgress;
+        });
+      }, 400); // Update every 400ms for smooth, visible animation
+      
+      setProgressAnimationInterval(interval);
+      progressInterval = interval;
+    };
+
+    // Stop progress animation
+    const stopProgressAnimation = () => {
+      if (progressInterval) {
+        clearInterval(progressInterval);
+        progressInterval = undefined;
+      }
+      setProgressAnimationInterval(prev => {
+        if (prev) {
+          clearInterval(prev);
+        }
+        return undefined;
+      });
     };
 
     const buildResultFromDetection = (record: DetectionRecord): AnalysisResult | null => {
@@ -76,23 +168,33 @@ const AnalysisPage: React.FC = () => {
         return;
       }
       setErrorMessage(null);
+      currentDetectionRef = record; // Update ref for animation
       setDetection(record);
 
       if (record.status === 'completed') {
+        stopProgressAnimation();
         const completedResult = buildResultFromDetection(record);
         setResult(completedResult);
         setAnalysisStatus(statusMessages.completed);
         setAnalysisProgress(100);
         setIsAnalyzing(false);
+        if (elapsedInterval) {
+          clearInterval(elapsedInterval);
+        }
       } else if (record.status === 'failed') {
+        stopProgressAnimation();
         setResult(null);
         setAnalysisStatus(record.error_message || statusMessages.failed);
         setAnalysisProgress(prev => (prev < 90 ? prev : 90));
         setIsAnalyzing(false);
       } else {
+        // Keep animation running for pending/processing
         setResult(null);
         setAnalysisStatus(statusMessages[record.status]);
-        setAnalysisProgress(prev => Math.min(prev + 10, 90));
+        setAnalysisProgress(prev => {
+          const newProgress = simulateProgress(record.status, prev);
+          return newProgress;
+        });
         setIsAnalyzing(true);
       }
     };
@@ -103,7 +205,9 @@ const AnalysisPage: React.FC = () => {
         updateDetectionState(latest);
 
         if (latest.status === 'pending' || latest.status === 'processing') {
-          pollTimeout = window.setTimeout(pollDetection, 4000);
+          // Update progress even while waiting for next poll
+          setAnalysisProgress(prev => simulateProgress(latest.status, prev));
+          pollTimeout = window.setTimeout(pollDetection, 3000); // Poll every 3 seconds
         }
       } catch (error) {
         if (!isActive) {
@@ -115,10 +219,23 @@ const AnalysisPage: React.FC = () => {
         }
     };
 
+    // Update elapsed time every second
+    elapsedInterval = window.setInterval(() => {
+      if (isActive) {
+        const elapsed = Math.floor((Date.now() - startTime) / 1000);
+        setElapsedTime(elapsed);
+      }
+    }, 1000);
+
+    // Start progress animation immediately
+    startProgressAnimation();
+
     if (initialDetection) {
       updateDetectionState(initialDetection);
       if (initialDetection.status === 'pending' || initialDetection.status === 'processing') {
-        pollTimeout = window.setTimeout(pollDetection, 4000);
+        pollTimeout = window.setTimeout(pollDetection, 3000);
+      } else {
+        stopProgressAnimation();
       }
     } else {
       pollDetection();
@@ -126,8 +243,15 @@ const AnalysisPage: React.FC = () => {
 
     return () => {
       isActive = false;
+      stopProgressAnimation();
+      if (progressInterval) {
+        clearInterval(progressInterval);
+      }
       if (pollTimeout) {
         clearTimeout(pollTimeout);
+      }
+      if (elapsedInterval) {
+        clearInterval(elapsedInterval);
       }
     };
   }, [detectionId, initialDetection, navigate]);
@@ -158,11 +282,29 @@ const AnalysisPage: React.FC = () => {
                 <p className='text-lg font-semibold'>⚠️ {errorMessage}</p>
               </div>
             )}
-            {isAnalyzing ? (
+            {(() => {
+              const shouldShow = (!result && detection?.status !== 'completed' && detection?.status !== 'failed') || isAnalyzing;
+              console.log('[AnalysisPage] Should show progress:', {
+                shouldShow,
+                isAnalyzing,
+                hasResult: !!result,
+                detectionStatus: detection?.status,
+                analysisProgress,
+                analysisStatus
+              });
+              return shouldShow;
+            })() ? (
               <div>
-                <div className='text-6xl mb-6'>🔍</div>
-                <ProgressBar progress={analysisProgress} status={analysisStatus} className='mb-6' />
-                <p className='text-gray-400'>Please wait while we analyze your file for deepfake content...</p>
+                <AnalysisProgress progress={analysisProgress} status={analysisStatus} elapsedTime={elapsedTime} className='mb-6' />
+                <div className='mt-8 p-6 bg-slate-900/40 rounded-lg border border-slate-700/50'>
+                  <p className='text-slate-300 text-sm mb-2'>💡 <strong>What's happening?</strong></p>
+                  <ul className='text-slate-400 text-xs space-y-1 text-left list-disc list-inside'>
+                    <li>Your video is being processed frame by frame</li>
+                    <li>Faces are detected and analyzed using advanced AI models</li>
+                    <li>Each frame is evaluated for deepfake indicators</li>
+                    <li>Results are compiled into a comprehensive report</li>
+                  </ul>
+                </div>
               </div>
             ) : detection && detection.status === 'failed' ? (
               <div>
@@ -200,6 +342,20 @@ const AnalysisPage: React.FC = () => {
                     {result.confidence.toFixed(1)}% {result.isDeepfake ? 'Deepfake' : 'Authentic'}
                   </p>
                 </div>
+
+                {/* Frame-by-Frame Analysis for Fake Videos */}
+                {result.isDeepfake && 
+                 detection?.media_type === 'video' && 
+                 detection?.frame_predictions?.frames && 
+                 detection.frame_predictions.frames.length > 0 && (
+                  <div className='mt-8 mb-6'>
+                    <FrameByFramePlayer
+                      videoUrl={`${API_V1_BASE}/detection/${detection.id}/file`}
+                      framePredictions={detection.frame_predictions.frames}
+                      fps={detection.fps_used || 3}
+                    />
+                  </div>
+                )}
 
                 {/* Analysis Details */}
                 <div className='text-left bg-gray-900 bg-opacity-50 rounded-lg p-6 mb-6'>

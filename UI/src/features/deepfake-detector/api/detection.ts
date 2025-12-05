@@ -9,7 +9,7 @@ export interface FramePrediction {
   frame_index: number;
   timestamp_ms?: number;
   fake_probability: number;
-  classification: DetectionResult;
+  classification?: DetectionResult; // Optional - can be derived from fake_probability
 }
 
 export interface DetectionRecord {
@@ -69,11 +69,13 @@ const mockDetections: DetectionRecord[] = [
     fps_used: 3,
     threshold_used: 0.5,
     processing_time_seconds: 12.5,
-    frame_predictions: [
-      { frame_index: 0, fake_probability: 0.9, classification: 'fake' },
-      { frame_index: 1, fake_probability: 0.85, classification: 'fake' },
-      { frame_index: 2, fake_probability: 0.1, classification: 'real' },
-    ],
+    frame_predictions: {
+      frames: [
+        { frame_index: 0, fake_probability: 0.9, classification: 'fake' },
+        { frame_index: 1, fake_probability: 0.85, classification: 'fake' },
+        { frame_index: 2, fake_probability: 0.1, classification: 'real' },
+      ],
+    },
     error_message: null,
   },
   {
@@ -96,10 +98,12 @@ const mockDetections: DetectionRecord[] = [
     fps_used: 2,
     threshold_used: 0.5,
     processing_time_seconds: 8.2,
-    frame_predictions: [
-      { frame_index: 0, fake_probability: 0.6, classification: 'uncertain' },
-      { frame_index: 1, fake_probability: 0.4, classification: 'real' },
-    ],
+    frame_predictions: {
+      frames: [
+        { frame_index: 0, fake_probability: 0.6, classification: 'uncertain' },
+        { frame_index: 1, fake_probability: 0.4, classification: 'real' },
+      ],
+    },
     error_message: null,
   },
 ];
@@ -134,15 +138,36 @@ interface UploadOptions {
 export const uploadDetection = (file: File, options?: UploadOptions): Promise<DetectionRecord> => {
   const formData = new FormData();
   formData.append('file', file);
-  formData.append('media_type', inferMediaType(file));
+  
+  // Check if user is authenticated - if so, use /analyze endpoint with save_report=true
+  const token = resolveAuthToken();
+  const isAuthenticated = !!token;
+  
+  if (isAuthenticated) {
+    // Use /analyze endpoint which supports saving reports for authenticated users
+    formData.append('save_report', 'true'); // FormData sends as string, backend converts to bool
+    // Note: /analyze doesn't require media_type, it infers it from the file
+    // fps and threshold use defaults if not provided
+  } else {
+    // Use /upload endpoint for anonymous users
+    formData.append('media_type', inferMediaType(file));
+  }
+  
   if (options?.description) {
     formData.append('description', options.description);
   }
 
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
-    xhr.open('POST', `${API_V1_BASE}/detection/upload`);
-    // No authentication required - this is a public endpoint
+    // Use /analyze if authenticated (supports save_report), otherwise use /upload
+    const endpoint = isAuthenticated ? `${API_V1_BASE}/detection/analyze` : `${API_V1_BASE}/detection/upload`;
+    xhr.open('POST', endpoint);
+    
+    // Add authentication header if user is logged in
+    if (token) {
+      xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+    }
+    
     xhr.responseType = 'json';
     xhr.onerror = () => reject(new Error('Network error while uploading file'));
     xhr.ontimeout = () => reject(new Error('Request timed out while uploading file'));

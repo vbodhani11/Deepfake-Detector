@@ -4,7 +4,11 @@ import ParticlesBackground from '../components/ParticlesBackground';
 import FuturisticButton from '../components/FuturisticButton';
 import FileUpload from '../components/FileUpload';
 import ProgressBar from '../components/ProgressBar';
-import { uploadDetection } from '../api/detection';
+import AnalysisProgress from '../components/AnalysisProgress';
+import ToastContainer, { ToastMessage } from '../components/ToastContainer';
+import { uploadDetection, fetchDetectionById, DetectionRecord, DetectionStatus } from '../api/detection';
+
+const MAX_VIDEO_DURATION_SECONDS = 10; // Match backend setting
 
 interface UploadedFile {
   file: File;
@@ -21,6 +25,12 @@ const UploadPage: React.FC = () => {
   const [isUploadingToServer, setIsUploadingToServer] = useState(false);
   const [uploadComplete, setUploadComplete] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [toasts, setToasts] = useState<ToastMessage[]>([]);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [analysisProgress, setAnalysisProgress] = useState(0);
+  const [analysisStatus, setAnalysisStatus] = useState('Uploading file...');
+  const [elapsedTime, setElapsedTime] = useState(0);
+  const [currentDetection, setCurrentDetection] = useState<DetectionRecord | null>(null);
 
   const simulateUploadProgress = (file: File) => {
     let progress = 0;
@@ -40,7 +50,48 @@ const UploadPage: React.FC = () => {
     }, 200);
   };
 
-  const handleFileSelect = (file: File) => {
+  const addToast = (message: string, type: ToastMessage['type'] = 'info', duration = 5000) => {
+    const id = Date.now().toString();
+    setToasts(prev => [...prev, { id, message, type, duration }]);
+  };
+
+  const removeToast = (id: string) => {
+    setToasts(prev => prev.filter(toast => toast.id !== id));
+  };
+
+  const checkVideoDuration = (file: File): Promise<void> => {
+    return new Promise((resolve) => {
+      if (!file.type.startsWith('video/')) {
+        resolve(); // Not a video, skip check
+        return;
+      }
+
+      const video = document.createElement('video');
+      video.preload = 'metadata';
+      video.src = URL.createObjectURL(file);
+
+      video.onloadedmetadata = () => {
+        URL.revokeObjectURL(video.src);
+        const duration = video.duration;
+        
+        if (duration > MAX_VIDEO_DURATION_SECONDS) {
+          addToast(
+            `ℹ️ Your video is ${duration.toFixed(1)}s long. We'll automatically analyze the first ${MAX_VIDEO_DURATION_SECONDS} seconds for optimal performance.`,
+            'info',
+            7000
+          );
+        }
+        resolve();
+      };
+
+      video.onerror = () => {
+        URL.revokeObjectURL(video.src);
+        resolve(); // Continue anyway
+      };
+    });
+  };
+
+  const handleFileSelect = async (file: File) => {
     // Cleanup previous video preview URL if it exists
     setUploadedFile(prev => {
       if (prev?.previewType === 'video' && prev.preview) {
@@ -49,12 +100,23 @@ const UploadPage: React.FC = () => {
       return null;
     });
 
+    setErrorMessage(null);
+
+    // Check video duration and inform user if it will be trimmed
+    if (file.type.startsWith('video/')) {
+      await checkVideoDuration(file);
+    }
+
     setUploadedFile({ file });
     setIsUploading(true);
     setUploadComplete(false);
     setUploadProgress(0);
     setUploadStatus('');
-    setErrorMessage(null);
+
+    // Show info toast for video duration limit (only if not already shown)
+    if (file.type.startsWith('video/')) {
+      // The checkVideoDuration function will show the toast if needed
+    }
 
     // Generate preview for images
     if (file.type.startsWith('image/')) {
@@ -122,36 +184,113 @@ const UploadPage: React.FC = () => {
     setUploadProgress(0);
 
     try {
+      // Start elapsed time counter
+      const startTime = Date.now();
+      const elapsedInterval = setInterval(() => {
+        setElapsedTime(Math.floor((Date.now() - startTime) / 1000));
+      }, 1000);
+
       const detection = await uploadDetection(uploadedFile.file, {
-        onProgress: progress => setUploadProgress(progress),
+        onProgress: progress => {
+          setUploadProgress(progress);
+          if (progress >= 100) {
+            // Upload complete, switch to analysis mode
+            setUploadComplete(true); // Mark upload as complete
+            setIsAnalyzing(true);
+            setAnalysisProgress(10);
+            setAnalysisStatus('File uploaded! Starting analysis...');
+          }
+        },
       });
 
       setUploadProgress(100);
-      setUploadStatus('Upload complete! Redirecting to analysis...');
-      setUploadComplete(true);
+      setUploadStatus('Upload complete! Analyzing...');
+      setUploadComplete(true); // Ensure upload is marked complete
+      setIsAnalyzing(true);
+      setAnalysisProgress(5); // Start at 5% - Uploading step complete, moving to Preparing
+      setAnalysisStatus('Initializing detection pipeline...');
+      setCurrentDetection(detection);
 
-      // Clear file from memory after successful upload
-      const detectionId = detection.id;
-      const fileName = detection.file_name ?? uploadedFile.file.name;
-      const initialDetection = detection;
-      
-      // Cleanup video preview URL if it exists
-      if (uploadedFile.previewType === 'video' && uploadedFile.preview) {
-        URL.revokeObjectURL(uploadedFile.preview);
-      }
-      
-      // Clear the uploaded file from state
-      setUploadedFile(null);
-      setUploadProgress(0);
-      setUploadStatus('');
+      // Poll for analysis progress
+      let pollTimeout: number | undefined;
+      let isActive = true;
+      let progressAnimInterval: number | undefined;
+      let currentDetectionRef: DetectionRecord | null = detection;
 
-      navigate('/analysis', {
-        state: {
-          detectionId,
-          fileName,
-          initialDetection,
-        },
-      });
+      // Start progress animation
+      progressAnimInterval = window.setInterval(() => {
+        setAnalysisProgress(prev => {
+          const status = currentDetectionRef?.status;
+          if (status === 'completed' || status === 'failed') {
+            return prev;
+          }
+          const increment = status === 'processing' ? 1.2 : 0.6;
+          const maxProgress = status === 'processing' ? 95 : 20;
+          return Math.min(prev + increment, maxProgress);
+        });
+      }, 400);
+
+      const pollDetection = async () => {
+        try {
+          const latest = await fetchDetectionById(detection.id);
+          if (!isActive) return;
+
+          currentDetectionRef = latest; // Update ref for animation
+          setCurrentDetection(latest);
+          
+          if (latest.status === 'completed') {
+            clearInterval(progressAnimInterval);
+            setAnalysisProgress(100);
+            setAnalysisStatus('Analysis complete!');
+            setIsAnalyzing(false);
+            clearInterval(elapsedInterval);
+            
+            // Navigate to analysis page after a brief delay
+            setTimeout(() => {
+              const detectionId = latest.id;
+              const fileName = latest.file_name ?? uploadedFile.file.name;
+              
+              // Cleanup
+              if (uploadedFile.previewType === 'video' && uploadedFile.preview) {
+                URL.revokeObjectURL(uploadedFile.preview);
+              }
+              
+              navigate('/analysis', {
+                state: {
+                  detectionId,
+                  fileName,
+                  initialDetection: latest,
+                },
+              });
+            }, 1500);
+          } else if (latest.status === 'failed') {
+            clearInterval(progressAnimInterval);
+            setIsAnalyzing(false);
+            clearInterval(elapsedInterval);
+            setErrorMessage(latest.error_message || 'Analysis failed');
+            setUploadStatus('Analysis failed. Please try again.');
+          } else {
+            // Update status based on detection status
+            const statusMessages: Record<DetectionStatus, string> = {
+              pending: 'Initializing detection pipeline...',
+              processing: 'Analyzing video frames with AI models...',
+              completed: 'Analysis complete!',
+              failed: 'Analysis failed',
+            };
+            setAnalysisStatus(statusMessages[latest.status] || 'Processing...');
+            
+            // Continue polling
+            pollTimeout = window.setTimeout(pollDetection, 3000);
+          }
+        } catch (error) {
+          if (!isActive) return;
+          console.error('Error polling detection:', error);
+          pollTimeout = window.setTimeout(pollDetection, 3000);
+        }
+      };
+
+      // Start polling
+      pollDetection();
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to upload file';
       setErrorMessage(message);
@@ -166,6 +305,7 @@ const UploadPage: React.FC = () => {
   return (
     <div className='min-h-screen bg-black text-gray-300 relative overflow-x-hidden'>
       <ParticlesBackground />
+      <ToastContainer toasts={toasts} onRemove={removeToast} />
 
       <div className='relative z-10 text-center px-4 py-8'>
         {/* Header */}
@@ -205,16 +345,31 @@ const UploadPage: React.FC = () => {
                 </>
               )}
 
-              {/* Progress Bar */}
-              {(isUploading || isUploadingToServer || uploadComplete) && (
-                <ProgressBar progress={uploadProgress} status={uploadStatus} className='mb-6' />
-              )}
-
-              {/* Upload Complete Status */}
-              {uploadComplete && (
-                <div className='text-green-400 mb-6'>
-                  <p className='text-lg font-semibold'>✅ {uploadStatus}</p>
+              {/* Show Analysis Progress when analyzing, otherwise show upload progress */}
+              {isAnalyzing ? (
+                <div className='mb-6'>
+                  <AnalysisProgress 
+                    progress={analysisProgress} 
+                    status={analysisStatus} 
+                    elapsedTime={elapsedTime}
+                    detectionStatus={currentDetection?.status}
+                    uploadComplete={uploadComplete}
+                  />
                 </div>
+              ) : (
+                <>
+                  {/* Progress Bar for upload only */}
+                  {(isUploading || isUploadingToServer || uploadComplete) && (
+                    <ProgressBar progress={uploadProgress} status={uploadStatus} className='mb-6' />
+                  )}
+
+                  {/* Upload Complete Status */}
+                  {uploadComplete && !isAnalyzing && (
+                    <div className='text-green-400 mb-6'>
+                      <p className='text-lg font-semibold'>✅ {uploadStatus}</p>
+                    </div>
+                  )}
+                </>
               )}
 
               {errorMessage && (

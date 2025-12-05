@@ -137,7 +137,7 @@ const ReportDetailPage: React.FC = () => {
         </header>
 
         <section className='grid grid-cols-1 lg:grid-cols-3 gap-6'>
-          <div className='lg:col-span-2 bg-slate-900/60 border border-slate-800/70 rounded-2xl p-6 space-y-6'>
+          <div className='lg:col-span-2 bg-slate-900/60 border border-slate-800/70 rounded-2xl p-6 space-y-6 min-w-0'>
             <div className='flex flex-wrap items-center gap-3'>
               <span className={`px-4 py-1.5 rounded-full text-sm font-semibold ${resultLabel.badge}`}>
                 {resultLabel.label}
@@ -146,41 +146,47 @@ const ReportDetailPage: React.FC = () => {
                 Status: <strong className='text-slate-100 ml-1'>{report.status}</strong>
               </span>
             </div>
-            <div className='grid grid-cols-2 gap-6'>
-              <div>
+            <div className='grid grid-cols-1 md:grid-cols-2 gap-6'>
+              <div className='min-w-0'>
                 <p className='text-xs uppercase tracking-widest text-slate-400 mb-2'>Confidence Score</p>
-                <p className='text-5xl font-semibold text-blue-100 mb-4'>{report.confidence_score ?? '—'}%</p>
+                <p className='text-4xl md:text-5xl font-semibold text-blue-100 mb-4 break-words'>
+                  {report.confidence_score ?? '—'}%
+                </p>
                 <ProgressBar progress={confidenceValue} status={`${confidenceValue}% certainty`} />
               </div>
-              <div className='bg-slate-950/40 border border-slate-800/80 rounded-xl p-4 space-y-2'>
+              <div className='bg-slate-950/40 border border-slate-800/80 rounded-xl p-4 space-y-2 min-w-0'>
                 <p className='text-xs uppercase tracking-widest text-slate-400'>Processing Time</p>
-                <p className='text-3xl font-semibold text-blue-100'>
-                  {report.processing_time_seconds ? `${report.processing_time_seconds}s` : '—'}
+                <p className='text-2xl md:text-3xl font-semibold text-blue-100 break-words'>
+                  {report.processing_time_seconds 
+                    ? `${Number(report.processing_time_seconds).toFixed(1)}s` 
+                    : '—'}
                 </p>
-                <p className='text-xs text-slate-400'>
+                <p className='text-xs text-slate-400 break-words'>
                   Model evaluated frames at {report.fps_used ?? '—'} FPS with threshold {report.threshold_used ?? '—'}.
                 </p>
               </div>
             </div>
           </div>
-          <div className='bg-slate-900/60 border border-slate-800/70 rounded-2xl p-6 space-y-4'>
+          <div className='bg-slate-900/60 border border-slate-800/70 rounded-2xl p-6 space-y-4 min-w-0'>
             <p className='text-xs uppercase tracking-widest text-slate-400'>File Details</p>
             <div className='space-y-3 text-slate-200 text-sm'>
-              <div className='flex justify-between text-slate-300'>
-                <span>File name</span>
-                <span className='font-medium text-blue-100'>{report.file_name}</span>
+              <div className='flex justify-between gap-2 text-slate-300'>
+                <span className='flex-shrink-0'>File name</span>
+                <span className='font-medium text-blue-100 truncate text-right' title={report.file_name}>
+                  {report.file_name}
+                </span>
               </div>
-              <div className='flex justify-between text-slate-300'>
-                <span>Media type</span>
-                <span className='font-medium uppercase text-blue-100'>{report.media_type}</span>
+              <div className='flex justify-between gap-2 text-slate-300'>
+                <span className='flex-shrink-0'>Media type</span>
+                <span className='font-medium uppercase text-blue-100 text-right'>{report.media_type}</span>
               </div>
-              <div className='flex justify-between text-slate-300'>
-                <span>File size</span>
-                <span className='font-medium text-blue-100'>{formatFileSize(report.file_size)}</span>
+              <div className='flex justify-between gap-2 text-slate-300'>
+                <span className='flex-shrink-0'>File size</span>
+                <span className='font-medium text-blue-100 text-right'>{formatFileSize(report.file_size)}</span>
               </div>
-              <div className='flex justify-between text-slate-300'>
-                <span>Created</span>
-                <span className='font-medium text-blue-100'>
+              <div className='flex justify-between gap-2 text-slate-300'>
+                <span className='flex-shrink-0'>Created</span>
+                <span className='font-medium text-blue-100 text-right break-words'>
                   {new Date(report.created_at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}
                 </span>
               </div>
@@ -216,35 +222,41 @@ const ReportDetailPage: React.FC = () => {
 
           {framePredictions.length ? (
             <div className='grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4'>
-              {framePredictions.map(frame => (
-                <div
-                  key={frame.frame_index}
-                  className='bg-slate-900/60 border border-slate-800/70 rounded-xl p-4 space-y-3'
-                >
-                  <div className='flex items-center justify-between text-sm text-slate-300'>
-                    <span>Frame #{frame.frame_index}</span>
-                    <span>{((frame.timestamp_ms ?? 0) / 1000).toFixed(2)}s</span>
+              {framePredictions.map(frame => {
+                // Derive classification from fake_probability if not provided
+                const classification: DetectionResult = frame.classification ?? 
+                  (frame.fake_probability >= 0.5 ? 'fake' : 'real');
+                
+                return (
+                  <div
+                    key={frame.frame_index}
+                    className='bg-slate-900/60 border border-slate-800/70 rounded-xl p-4 space-y-3'
+                  >
+                    <div className='flex items-center justify-between text-sm text-slate-300'>
+                      <span>Frame #{frame.frame_index}</span>
+                      <span>{((frame.timestamp_ms ?? 0) / 1000).toFixed(2)}s</span>
+                    </div>
+                    <div className='h-2 bg-slate-800 rounded-full overflow-hidden'>
+                      <div
+                        className={`h-full rounded-full ${
+                          classification === 'fake' ? 'bg-rose-400' : 'bg-emerald-400'
+                        }`}
+                        style={{ width: `${frame.fake_probability * 100}%` }}
+                      />
+                    </div>
+                    <div className='flex items-center justify-between text-sm'>
+                      <span className='text-slate-400'>Fake probability</span>
+                      <span className='font-semibold text-blue-100'>
+                        {(frame.fake_probability * 100).toFixed(0)}%
+                      </span>
+                    </div>
+                    <div className='text-xs uppercase tracking-widest text-slate-400'>
+                      Classified as{' '}
+                      <span className='text-slate-100 font-semibold'>{classification.toUpperCase()}</span>
+                    </div>
                   </div>
-                  <div className='h-2 bg-slate-800 rounded-full overflow-hidden'>
-                    <div
-                      className={`h-full rounded-full ${
-                        frame.classification === 'fake' ? 'bg-rose-400' : 'bg-emerald-400'
-                      }`}
-                      style={{ width: `${frame.fake_probability * 100}%` }}
-                    />
-                  </div>
-                  <div className='flex items-center justify-between text-sm'>
-                    <span className='text-slate-400'>Fake probability</span>
-                    <span className='font-semibold text-blue-100'>
-                      {(frame.fake_probability * 100).toFixed(0)}%
-                    </span>
-                  </div>
-                  <div className='text-xs uppercase tracking-widest text-slate-400'>
-                    Classified as{' '}
-                    <span className='text-slate-100 font-semibold'>{frame.classification.toUpperCase()}</span>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           ) : (
             <div className='bg-slate-900/60 border border-slate-800/70 rounded-xl p-6 text-slate-300 text-center'>
