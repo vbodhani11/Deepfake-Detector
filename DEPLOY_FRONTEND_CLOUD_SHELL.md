@@ -118,12 +118,15 @@
    # Start frontend in a screen session
    screen -S frontend
    cd ~/Deepfake-Detector/UI
-   npm install
+   npm install --ignore-scripts
    npm run build
    cd dist
    python3 -m http.server 8080 --bind 0.0.0.0
    # Press Ctrl+A then D to detach
    ```
+
+   cd ~/Deepfake-Detector/UI
+nano .env.production
    
    **Note:** If you haven't started the backend in screen yet, do that first:
    ```bash
@@ -147,6 +150,12 @@
      --zone us-east1-c \
      --tags http-server
    ```
+
+   gcloud compute instances describe instance-20250918-020237 --zone us-east1-c --format="get(tags.items)"
+
+   kill -9 4061   
+
+   to check your new IP
 
 11. **Get your public IP**:
    ```bash
