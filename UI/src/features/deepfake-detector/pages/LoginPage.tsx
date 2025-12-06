@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { Link, Location, useLocation, useNavigate } from 'react-router-dom';
 import ParticlesBackground from '../components/ParticlesBackground';
 import FuturisticButton from '../components/FuturisticButton';
@@ -14,11 +14,19 @@ const LoginPage: React.FC = () => {
   const [rememberMe, setRememberMe] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const isMountedRef = useRef(true);
 
   const isFormValid = useMemo(() => {
     const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     return emailPattern.test(email.trim()) && password.trim().length >= 6;
   }, [email, password]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -28,20 +36,28 @@ const LoginPage: React.FC = () => {
       return;
     }
 
+    if (!isMountedRef.current) return;
+
     setError(null);
     setIsLoading(true);
 
     try {
       const response = await login(email.trim(), password);
+      
+      if (!isMountedRef.current) return;
+      
       persistToken(response.access_token, { persist: rememberMe ? 'local' : 'session' });
 
       const redirectPath =
         (location.state as { from?: Location } | null)?.from?.pathname?.toString() || '/';
       navigate(redirectPath, { replace: true });
     } catch (err) {
+      if (!isMountedRef.current) return;
       setError(err instanceof Error ? err.message : 'Login failed. Please try again.');
     } finally {
-      setIsLoading(false);
+      if (isMountedRef.current) {
+        setIsLoading(false);
+      }
     }
   };
 

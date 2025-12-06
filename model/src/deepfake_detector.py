@@ -251,7 +251,7 @@ class DeepfakeDetectorPipeline:
         
         return tensor.unsqueeze(0)  # Add batch dimension
     
-    def predict_video(self, video_path: str, model_path: str, fps: int = 3) -> Dict[str, Any]:
+    def predict_video(self, video_path: str, model_path: str, fps: int = 3, invert_class_mapping: bool = False) -> Dict[str, Any]:
         """
         Predict if a video contains deepfakes.
         
@@ -259,6 +259,8 @@ class DeepfakeDetectorPipeline:
             video_path (str): Path to the video file
             model_path (str): Path to the trained model
             fps (int): Frames per second to extract (default: 3)
+            invert_class_mapping (bool): If True, swap Class 0 and Class 1 mapping
+                                        (use if real videos are detected as fake)
             
         Returns:
             Dict containing prediction results with the following keys:
@@ -272,6 +274,9 @@ class DeepfakeDetectorPipeline:
             - average_fake_probability: Average probability of being fake
             - frame_predictions: List of per-frame predictions
         """
+        # Store invert mapping flag for use in frame processing
+        self._invert_class_mapping = invert_class_mapping
+        
         # Load model
         model = self._load_model(model_path)
         
@@ -308,11 +313,32 @@ class DeepfakeDetectorPipeline:
                             logits = model(input_tensor)
                             probabilities = torch.softmax(logits, dim=1)
                             
-                        # FIXED: Correct class mapping based on your training data
-                        # Class 0: fake_videos (should be labeled as "fake")
-                        # Class 1: real_videos (should be labeled as "real")
-                        fake_prob = probabilities[0][0].item()  # Class 0 = fake_videos
-                        real_prob = probabilities[0][1].item()  # Class 1 = real_videos
+                        # Class mapping - verify with your training data
+                        # If model is detecting real videos as fake, the mapping might be inverted
+                        prob_class_0 = probabilities[0][0].item()
+                        prob_class_1 = probabilities[0][1].item()
+                        
+                        # Default mapping: Class 0 = fake, Class 1 = real
+                        # If your model detects real videos as fake, try inverting this mapping
+                        # by setting invert_class_mapping=True in the predict_video call
+                        invert_mapping = getattr(self, '_invert_class_mapping', False)
+                        
+                        if invert_mapping:
+                            # Inverted mapping: Class 0 = real, Class 1 = fake
+                            fake_prob = prob_class_1
+                            real_prob = prob_class_0
+                            print(f"[INVERTED MAPPING] Frame {frame_count}: Class 0 (real)={prob_class_0:.4f}, Class 1 (fake)={prob_class_1:.4f}")
+                        else:
+                            # Default mapping: Class 0 = fake, Class 1 = real
+                            fake_prob = prob_class_0
+                            real_prob = prob_class_1
+                        
+                        # Log probabilities for debugging (first frame and every 10th frame)
+                        if frame_count == 0 or frame_count % 10 == 0:
+                            print(f"Frame {frame_count}: Class 0={prob_class_0:.4f}, Class 1={prob_class_1:.4f}, "
+                                  f"fake_prob={fake_prob:.4f}, real_prob={real_prob:.4f}, "
+                                  f"prediction={'fake' if fake_prob > 0.5 else 'real'}")
+                        
                         prediction = "fake" if fake_prob > 0.5 else "real"
                         confidence = max(fake_prob, real_prob)
                         

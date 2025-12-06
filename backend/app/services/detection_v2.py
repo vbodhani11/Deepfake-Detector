@@ -334,4 +334,3 @@ class DetectionServiceV2:
             
             if session_dir:
                 cleanup_temp_dir(session_dir)
-

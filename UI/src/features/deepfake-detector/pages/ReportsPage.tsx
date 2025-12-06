@@ -17,7 +17,10 @@ const formatConfidence = (value?: number | null): string => {
   if (typeof value !== 'number') {
     return '—';
   }
-  return `${value}%`;
+  // Normalize: if value is between 0-1, convert to percentage
+  const normalized = value > 1 ? value : value * 100;
+  // Format to 2 decimal places max
+  return `${normalized.toFixed(2)}%`;
 };
 
 const ReportsPage: React.FC = () => {
@@ -41,10 +44,13 @@ const ReportsPage: React.FC = () => {
       try {
         const resp = await fetchUserDetections(page, perPage);
         if (!isActive) return;
-        setReports(resp.items);
-        setTotal(resp.total ?? resp.items.length);
+        setReports(resp?.items ?? []);
+        setTotal(resp?.total ?? resp?.items?.length ?? 0);
       } catch (err) {
+        if (!isActive) return;
         setError(err instanceof Error ? err.message : 'Failed to load reports');
+        setReports([]); // Ensure reports is always an array
+        setTotal(0);
       } finally {
         if (isActive) setLoading(false);
       }
@@ -88,8 +94,19 @@ const ReportsPage: React.FC = () => {
           {loading ? (
             <div className='py-12 text-center text-slate-400'>Loading reports...</div>
           ) : error ? (
-            <div className='py-12 text-center text-rose-300'>Error: {error}</div>
-          ) : !reports.length ? (
+            <div className='py-12 text-center'>
+              <div className='bg-red-900/30 border border-red-500/50 rounded-lg p-6 max-w-2xl mx-auto'>
+                <p className='text-rose-300 text-lg font-semibold mb-2'>Error loading reports</p>
+                <p className='text-rose-400 text-sm'>{error}</p>
+                <button
+                  onClick={() => window.location.reload()}
+                  className='mt-4 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors'
+                >
+                  Retry
+                </button>
+              </div>
+            </div>
+          ) : !reports || !reports.length ? (
             <div className='py-24 text-center text-slate-400'>No saved reports yet.</div>
           ) : (
             <div className='grid grid-cols-1 md:grid-cols-2 gap-6'>
@@ -120,14 +137,16 @@ const ReportsPage: React.FC = () => {
                     </div>
 
                     <div className='grid grid-cols-2 gap-6'>
-                      <div>
+                      <div className='min-w-0'>
                         <p className='text-xs uppercase tracking-widest text-slate-400 mb-1'>Confidence</p>
-                        <p className='text-3xl font-bold text-blue-300'>{formatConfidence(record.confidence_score)}</p>
+                        <p className='text-3xl font-bold text-blue-300 truncate' title={formatConfidence(record.confidence_score)}>
+                          {formatConfidence(record.confidence_score)}
+                        </p>
                       </div>
-                      <div className='text-right'>
+                      <div className='text-right min-w-0'>
                         <p className='text-xs uppercase tracking-widest text-slate-400 mb-1'>Processing</p>
                         <p className='text-lg font-semibold text-slate-200'>
-                          {record.processing_time_seconds ? `${record.processing_time_seconds}s` : 'N/A'}
+                          {record.processing_time_seconds ? `${record.processing_time_seconds.toFixed(2)}s` : 'N/A'}
                         </p>
                         <p className='text-xs text-slate-400'>Elapsed time</p>
                       </div>

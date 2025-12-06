@@ -1,7 +1,7 @@
 /* Custom CSS for Deepfake Detector */
 
-/* Import Google Fonts */
-@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Audiowide&display=swap');
+/* Import Google Fonts - Inter for better readability */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
 
 /* Prevent overscroll bounce and white background flash */
 html {
@@ -33,9 +33,13 @@ body {
   -webkit-overflow-scrolling: touch;
 }
 
-/* Global font override for futuristic look */
+/* Global font override - Inter for better readability and eye comfort */
 .deepfake-app {
-  font-family: 'Orbitron', sans-serif;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-feature-settings: 'kern' 1;
+  text-rendering: optimizeLegibility;
 }
 
 /* Text shadow utilities */
@@ -165,4 +169,32 @@ body {
   100% {
     background-position: 200% 0;
   }
+}
+
+/* Shimmer animation for progress bar */
+@keyframes shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+.animate-shimmer {
+  animation: shimmer 2s infinite;
+}
+
+/* Reverse spin animation */
+.animate-reverse {
+  animation-direction: reverse;
+}
+
+/* Pulse delay utilities */
+.delay-75 {
+  animation-delay: 0.075s;
+}
+
+.delay-150 {
+  animation-delay: 0.15s;
 }

@@ -1,9 +1,12 @@
 import uuid
+import logging
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
 
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Query
+
+logger = logging.getLogger(__name__)
 
 from app.api.deps import CurrentUser, SessionDep, OptionalSessionDep, OptionalUser
 from app.models.entities.detection import (
@@ -59,14 +62,9 @@ async def analyze_video(
         else:
             detection_service = DetectionService()
 
+        # If user is not authenticated but asked to save, just proceed without saving
         if save_report and current_user is None:
-            raise HTTPException(
-                status_code=401,
-                detail=(
-                    "Authentication required to save reports. "
-                    "Please login or set save_report=false"
-                ),
-            )
+            save_report = False
 
         # Validate file size
         if file.size and file.size > settings.MAX_FILE_SIZE_MB * 1024 * 1024:
@@ -130,9 +128,87 @@ async def analyze_video(
         file_content = await file.read()
         file_size = len(file_content)
 
-        user_id = current_user.id if (current_user and save_report) else None
+        # Trim video to first 10 seconds if longer (for memory efficiency)
+        # We'll trim the video content before processing
+        trimmed_content = file_content
+        was_trimmed = False
+        original_duration = None
+        
+        try:
+            import cv2
+            import tempfile
+            import os
+            import subprocess
+            
+            # Write to temp file for OpenCV to read
+            with tempfile.NamedTemporaryFile(delete=False, suffix=file_extension) as temp_file:
+                temp_file.write(file_content)
+                temp_path = temp_file.name
+            
+            try:
+                cap = cv2.VideoCapture(temp_path)
+                if cap.isOpened():
+                    # Get video properties
+                    video_fps = cap.get(cv2.CAP_PROP_FPS)
+                    frame_count = cap.get(cv2.CAP_PROP_FRAME_COUNT)
+                    
+                    if video_fps > 0 and frame_count > 0:
+                        original_duration = frame_count / video_fps
+                        
+                        # If video is longer than max duration, trim it
+                        if original_duration > settings.MAX_VIDEO_DURATION_SECONDS:
+                            was_trimmed = True
+                            logger.info(f"Trimming video from {original_duration:.1f}s to {settings.MAX_VIDEO_DURATION_SECONDS}s")
+                            
+                            # Use ffmpeg to trim video to first 10 seconds
+                            trimmed_path = temp_path + "_trimmed" + file_extension
+                            try:
+                                subprocess.run(
+                                    [
+                                        'ffmpeg', '-y',  # -y to overwrite output
+                                        '-i', temp_path,
+                                        '-t', str(settings.MAX_VIDEO_DURATION_SECONDS),  # Duration limit
+                                        '-c', 'copy',  # Copy codec (fast, no re-encoding)
+                                        trimmed_path
+                                    ],
+                                    check=True,
+                                    capture_output=True,
+                                    timeout=30
+                                )
+                                
+                                # Read trimmed video
+                                with open(trimmed_path, 'rb') as f:
+                                    trimmed_content = f.read()
+                                
+                                # Clean up trimmed file
+                                if os.path.exists(trimmed_path):
+                                    os.unlink(trimmed_path)
+                                
+                                logger.info(f"Successfully trimmed video to {settings.MAX_VIDEO_DURATION_SECONDS}s")
+                            except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired) as e:
+                                # If ffmpeg fails, log warning but use original video
+                                logger.warning(f"Could not trim video with ffmpeg: {e}. Using original video.")
+                                was_trimmed = False
+                                trimmed_content = file_content
+                
+                cap.release()
+            finally:
+                # Clean up temp file
+                if os.path.exists(temp_path):
+                    os.unlink(temp_path)
+        except Exception as e:
+            # If trimming fails, continue with original video (graceful degradation)
+            logger.warning(f"Could not trim video: {str(e)}. Using original video.")
+            trimmed_content = file_content
+            was_trimmed = False
+        
+        # Use trimmed content for processing
+        file_content = trimmed_content
 
-        # Try to create detection entry in database (optional - for tracking)
+        user_id = current_user.id if (current_user and save_report) else None
+        file_extension = Path(file.filename).suffix
+
+        # Try to create detection entry in database first (to get the ID)
         detection = None
         if session is not None:
             try:
@@ -140,7 +216,7 @@ async def analyze_video(
                     user_id=user_id,
                     media_type=MediaType.VIDEO,
                     file_name=file.filename,
-                    file_path=None,
+                    file_path=None,  # Will be updated after file is saved
                     file_size=file_size,
                     status=DetectionStatus.PROCESSING,
                     fps_used=fps,
@@ -148,6 +224,44 @@ async def analyze_video(
                 )
 
                 detection = detection_service.create_detection(detection_create)
+                detection_id = detection.id
+            except Exception as db_error:
+                # Database not available - generate ID and continue without storing detection record
+                print(f"Database not available, processing without storage: {str(db_error)}")
+                detection_id = uuid.uuid4()
+                session = None
+                detection_repository = None
+                detection_service = DetectionService()
+        else:
+            detection_id = uuid.uuid4()
+
+        # Save file to disk using detection_id (so it can be served later via /file endpoint)
+        file_path = None
+        if save_report and user_id:
+            uploads_dir = Path("uploads") / "users" / str(user_id)
+            uploads_dir.mkdir(parents=True, exist_ok=True)
+            unique_filename = f"{detection_id}{file_extension}"
+            file_path = uploads_dir / unique_filename
+            with open(file_path, "wb") as f:
+                f.write(file_content)
+        else:
+            # For anonymous uploads, save to anonymous directory
+            uploads_dir = Path("uploads/anonymous")
+            uploads_dir.mkdir(parents=True, exist_ok=True)
+            unique_filename = f"{detection_id}{file_extension}"
+            file_path = uploads_dir / unique_filename
+            with open(file_path, "wb") as f:
+                f.write(file_content)
+
+        # Update detection with file_path if detection was created
+        if detection and session is not None:
+            try:
+                detection.file_path = str(file_path)
+                session.add(detection)
+                session.commit()
+                session.refresh(detection)
+            except Exception as update_error:
+                print(f"Could not update file_path in database: {str(update_error)}")
             except Exception as db_error:
                 # Database not available - continue without storing detection record
                 print(f"Database not available, processing without storage: {str(db_error)}")
@@ -418,6 +532,15 @@ async def upload_media_for_detection(
                 "updated_at": None,
             }
         
+        # Persist anonymous detection results to a sidecar JSON for retrieval
+        try:
+            import json
+            sidecar_path = file_path.with_suffix(file_path.suffix + ".json")
+            with open(sidecar_path, "w") as f:
+                json.dump(detection_dict, f, default=str)
+        except Exception as sidecar_err:
+            print(f"Warning: failed to write anonymous detection sidecar for {detection_id}: {sidecar_err}")
+        
         return DetectionResponse(**detection_dict)
 
     except ValueError as e:
@@ -463,7 +586,7 @@ def get_user_detections(
 @router.get("/{detection_id}", response_model=DetectionResponse)
 def get_detection_by_id(
     detection_id: uuid.UUID,
-    session: OptionalSessionDep,
+    session: OptionalSessionDep = None,
 ) -> Any:
     """
     Get a specific detection record by ID (public endpoint, no authentication required).
@@ -473,9 +596,54 @@ def get_detection_by_id(
     try:
         from datetime import datetime
         
-        # Check if file exists (means upload and processing completed)
+        # First, try to get from database if available
+        if session is not None:
+            try:
+                detection_repository = DetectionRepository(session)
+                detection = detection_repository.get(detection_id)
+                if detection:
+                    # Use the same pattern as get_user_detections which works
+                    return DetectionResponse(**detection.model_dump())
+            except Exception as db_error:
+                # Database lookup failed, continue to file system search
+                print(f"Database lookup failed in get_detection_by_id: {str(db_error)}")
+                import traceback
+                traceback.print_exc()
+                # Don't return here, continue to file system fallback
+        else:
+            print("Warning: Session is None in get_detection_by_id, cannot query database")
+        
+        # Fallback: Check file system (for backward compatibility with anonymous uploads)
+        # Check user directories first
+        user_uploads_base = Path("uploads/users")
+        if user_uploads_base.exists():
+            for user_dir in user_uploads_base.iterdir():
+                if user_dir.is_dir():
+                    matching_files = list(user_dir.glob(f"{detection_id}.*"))
+                    if matching_files:
+                        file_path = matching_files[0]
+                        file_size = file_path.stat().st_size if file_path.exists() else 0
+                        file_name = file_path.name
+                        
+                        detection_dict = {
+                            "id": detection_id,
+                            "user_id": None,  # Don't know user_id from file path alone
+                            "media_type": "video",
+                            "file_name": file_name,
+                            "file_path": str(file_path),
+                            "file_size": file_size,
+                            "status": DetectionStatus.COMPLETED,
+                            "result": None,
+                            "confidence_score": None,
+                            "processing_time_seconds": None,
+                            "error_message": None,
+                            "created_at": datetime.utcnow(),
+                            "updated_at": datetime.utcnow(),
+                        }
+                        return DetectionResponse(**detection_dict)
+        
+        # Check anonymous directory
         uploads_dir = Path("uploads/anonymous")
-        # Try to find file with this detection ID
         matching_files = list(uploads_dir.glob(f"{detection_id}.*"))
         
         if matching_files:
@@ -483,6 +651,20 @@ def get_detection_by_id(
             file_path = matching_files[0]
             file_size = file_path.stat().st_size if file_path.exists() else 0
             file_name = file_path.name
+            
+            # Try to load sidecar JSON with results if it exists
+            detection_dict = None
+            sidecar_path = file_path.with_suffix(file_path.suffix + ".json")
+            if sidecar_path.exists():
+                try:
+                    import json
+                    with open(sidecar_path, "r") as f:
+                        detection_dict = json.load(f)
+                except Exception as sidecar_err:
+                    print(f"Warning: failed to read sidecar for {detection_id}: {sidecar_err}")
+            
+            if detection_dict:
+                return DetectionResponse(**detection_dict)
             
             detection_dict = {
                 "id": detection_id,
@@ -499,47 +681,114 @@ def get_detection_by_id(
                 "created_at": datetime.utcnow(),
                 "updated_at": datetime.utcnow(),
             }
-        else:
-            # File not found - detection doesn't exist
-            raise ValueError(f"Detection with ID {detection_id} not found")
+            return DetectionResponse(**detection_dict)
         
-        return DetectionResponse(**detection_dict)
+        # Detection not found
+        raise ValueError(f"Detection with ID {detection_id} not found")
 
+    except ValueError as e:
+        # Re-raise ValueError as 404 (not found)
+        raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
+        import traceback
+        error_trace = traceback.format_exc()
         print(f"Error in get_detection_by_id: {str(e)}")
+        print(f"Traceback: {error_trace}")
         raise HTTPException(
             status_code=500,
-            detail="An error occurred retrieving the detection",
+            detail=f"An error occurred retrieving the detection: {str(e)}",
         )
+
+def _get_media_type(file_path: Path) -> str:
+    """Detect MIME type based on file extension"""
+    extension = file_path.suffix.lower()
+    mime_types = {
+        ".mp4": "video/mp4",
+        ".avi": "video/x-msvideo",
+        ".mov": "video/quicktime",
+        ".mkv": "video/x-matroska",
+        ".webm": "video/webm",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".png": "image/png",
+        ".gif": "image/gif",
+    }
+    return mime_types.get(extension, "application/octet-stream")
+
 
 @router.get("/{detection_id}/file")
 async def get_detection_file(
     detection_id: uuid.UUID,
+    session: OptionalSessionDep = None,
 ) -> Any:
     """
     Serve the uploaded file (video/image) for a detection record.
     Public endpoint, no authentication required.
+    First checks database for file_path, then falls back to uploads/anonymous directory.
     """
     try:
         from fastapi.responses import FileResponse
         from pathlib import Path
         
+        file_path = None
+        detection = None
+        
+        # First, try to get file_path from database if available
+        if session is not None:
+            try:
+                detection_repository = DetectionRepository(session)
+                detection = detection_repository.get(detection_id)
+                if detection and detection.file_path:
+                    file_path = Path(detection.file_path)
+                    if file_path.exists():
+                        return FileResponse(
+                            path=str(file_path),
+                            media_type=_get_media_type(file_path),
+                            filename=detection.file_name or file_path.name
+                        )
+            except Exception as db_error:
+                # Database lookup failed, continue to file system search
+                print(f"Database lookup failed, trying file system: {str(db_error)}")
+        
+        # Fallback: Check user-specific directories and anonymous directory
+        # Check user directories first
+        if session is not None:
+            try:
+                if detection is None:
+                    detection_repository = DetectionRepository(session)
+                    detection = detection_repository.get(detection_id)
+                if detection and detection.user_id:
+                    user_uploads_dir = Path("uploads") / "users" / str(detection.user_id)
+                    matching_files = list(user_uploads_dir.glob(f"*"))
+                    # Find file that might match (by checking all files in user directory)
+                    for f in matching_files:
+                        if f.is_file():
+                            file_path = f
+                            if file_path.exists():
+                                return FileResponse(
+                                    path=str(file_path),
+                                    media_type=_get_media_type(file_path),
+                                    filename=detection.file_name or file_path.name
+                                )
+            except Exception:
+                pass  # Continue to anonymous directory check
+        
+        # Fallback: Check uploads/anonymous directory
         uploads_dir = Path("uploads/anonymous")
         matching_files = list(uploads_dir.glob(f"{detection_id}.*"))
         
-        if not matching_files:
-            raise HTTPException(status_code=404, detail="File not found")
+        if matching_files:
+            file_path = matching_files[0]
+            if file_path.exists():
+                return FileResponse(
+                    path=str(file_path),
+                    media_type=_get_media_type(file_path),
+                    filename=file_path.name
+                )
         
-        file_path = matching_files[0]
+        # File not found in any location
+        raise HTTPException(status_code=404, detail="File not found")
         
-        if not file_path.exists():
-            raise HTTPException(status_code=404, detail="File not found")
-        
-        return FileResponse(
-            path=str(file_path),
-            media_type="video/mp4",  # Could be improved to detect actual type
-            filename=file_path.name
-        )
     except HTTPException:
         raise
     except Exception as e:
