@@ -388,3 +388,4 @@ atlassian-ide-plugin.xml
 .idea/$CACHE_FILE$
 .idea/codestream.xml
 backend/.env.prod
+model/models/*old*.pt
