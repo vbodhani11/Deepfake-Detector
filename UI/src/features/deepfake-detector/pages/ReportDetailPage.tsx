@@ -3,6 +3,11 @@ import { useNavigate, useParams } from 'react-router-dom';
 import ProgressBar from '../components/ProgressBar';
 import { DetectionRecord, DetectionResult, fetchDetectionById } from '../api/detection';
 import { useEffect, useState } from 'react';
+import jsPDF from 'jspdf';
+import html2canvas from "html2canvas";
+import { useRef } from "react";
+
+
 
 const formatFileSize = (size: number): string => {
   if (!Number.isFinite(size)) {
@@ -34,6 +39,8 @@ const metricCard = (label: string, value: string | number | null | undefined) =>
 );
 
 const ReportDetailPage: React.FC = () => {
+  const pdfRef = useRef<HTMLDivElement>(null);
+
   const { reportId } = useParams<{ reportId: string }>();
   const navigate = useNavigate();
 
@@ -104,14 +111,50 @@ const ReportDetailPage: React.FC = () => {
       </div>
     );
   }
-
+  const handleDownloadPDF = async () => {
+    if (!pdfRef.current) return;
+  
+    const element = pdfRef.current;
+  
+    const canvas = await html2canvas(element, {
+      scale: 2,
+      useCORS: true,
+      backgroundColor: "#0f172a", // Your dark theme background
+      windowWidth: element.scrollWidth,
+      windowHeight: element.scrollHeight,
+    });
+  
+    const imgData = canvas.toDataURL("image/png");
+    const pdf = new jsPDF("p", "mm", "a4");
+  
+    const pdfWidth = pdf.internal.pageSize.getWidth();
+    const imgProps = pdf.getImageProperties(imgData);
+    const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
+  
+    let heightLeft = pdfHeight;
+    let position = 0;
+  
+    pdf.addImage(imgData, "PNG", 0, position, pdfWidth, pdfHeight);
+    heightLeft -= pdf.internal.pageSize.getHeight();
+  
+    while (heightLeft > 0) {
+      pdf.addPage();
+      position = -pdf.internal.pageSize.getHeight();
+      pdf.addImage(imgData, "PNG", 0, position, pdfWidth, pdfHeight);
+      heightLeft -= pdf.internal.pageSize.getHeight();
+    }
+  
+    pdf.save(`${report.file_name}_report.pdf`);
+  };
+  
+  
   const resultLabel = formatResultLabel(report.result ?? undefined);
   const fakeRatioPercent = report.fake_ratio ? `${Math.round(report.fake_ratio * 100)}%` : '\u2014';
   const confidenceValue = report.confidence_score ?? 0;
   const framePredictions = report.frame_predictions?.frames ?? [];
 
   return (
-    <div className='min-h-screen bg-animated text-gray-200 deepfake-app relative overflow-hidden'>
+    <div  id="pdf-wrapper" ref={pdfRef} className='min-h-screen bg-animated text-gray-200 deepfake-app relative overflow-hidden'>
       <div className='max-w-6xl mx-auto py-16 px-6 relative z-10 space-y-10'>
         <div className='flex items-center justify-between gap-4'>
           <button
@@ -121,6 +164,8 @@ const ReportDetailPage: React.FC = () => {
           >
             ← Back to Reports
           </button>
+          
+
           <div className='text-xs uppercase tracking-[0.3em] text-blue-200/60'>Report {report.id}</div>
         </div>
 
@@ -265,6 +310,9 @@ const ReportDetailPage: React.FC = () => {
           )}
         </section>
 
+          
+         
+
         <section className='flex flex-wrap gap-4 justify-end pt-6 border-t border-slate-800/40'>
           <button
             type='button'
@@ -275,11 +323,11 @@ const ReportDetailPage: React.FC = () => {
           </button>
           <button
             type='button'
-            disabled
-            className='px-6 py-3 rounded-lg bg-slate-700/70 text-slate-400 cursor-not-allowed'
+            onClick={handleDownloadPDF}
+            className='px-6 py-3 rounded-lg bg-blue-600/80 hover:bg-blue-500 text-white transition-colors'
             title='Download support coming soon'
           >
-            Download Report (coming soon)
+            Download PDF Report
           </button>
         </section>
       </div>
