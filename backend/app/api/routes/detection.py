@@ -699,6 +699,23 @@ def get_detection_by_id(
             detail=f"An error occurred retrieving the detection: {str(e)}",
         )
 
+def _get_media_type(file_path: Path) -> str:
+    """Detect MIME type based on file extension"""
+    extension = file_path.suffix.lower()
+    mime_types = {
+        ".mp4": "video/mp4",
+        ".avi": "video/x-msvideo",
+        ".mov": "video/quicktime",
+        ".mkv": "video/x-matroska",
+        ".webm": "video/webm",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".png": "image/png",
+        ".gif": "image/gif",
+    }
+    return mime_types.get(extension, "application/octet-stream")
+
+
 @router.get("/{detection_id}/file")
 async def get_detection_file(
     detection_id: uuid.UUID,
@@ -714,6 +731,7 @@ async def get_detection_file(
         from pathlib import Path
         
         file_path = None
+        detection = None
         
         # First, try to get file_path from database if available
         if session is not None:
@@ -725,7 +743,7 @@ async def get_detection_file(
                     if file_path.exists():
                         return FileResponse(
                             path=str(file_path),
-                            media_type="video/mp4",  # Could be improved to detect actual type
+                            media_type=_get_media_type(file_path),
                             filename=detection.file_name or file_path.name
                         )
             except Exception as db_error:
@@ -736,8 +754,9 @@ async def get_detection_file(
         # Check user directories first
         if session is not None:
             try:
-                detection_repository = DetectionRepository(session)
-                detection = detection_repository.get(detection_id)
+                if detection is None:
+                    detection_repository = DetectionRepository(session)
+                    detection = detection_repository.get(detection_id)
                 if detection and detection.user_id:
                     user_uploads_dir = Path("uploads") / "users" / str(detection.user_id)
                     matching_files = list(user_uploads_dir.glob(f"*"))
@@ -748,7 +767,7 @@ async def get_detection_file(
                             if file_path.exists():
                                 return FileResponse(
                                     path=str(file_path),
-                                    media_type="video/mp4",
+                                    media_type=_get_media_type(file_path),
                                     filename=detection.file_name or file_path.name
                                 )
             except Exception:
@@ -763,7 +782,7 @@ async def get_detection_file(
             if file_path.exists():
                 return FileResponse(
                     path=str(file_path),
-                    media_type="video/mp4",  # Could be improved to detect actual type
+                    media_type=_get_media_type(file_path),
                     filename=file_path.name
                 )
         

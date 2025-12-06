@@ -69,6 +69,9 @@ class Settings(BaseSettings):
     MAX_VIDEO_DURATION_SECONDS: int = 10  # Limit video duration to 10 seconds for memory efficiency
     ALLOWED_VIDEO_EXTENSIONS: list[str] = [".mp4", ".avi", ".mov", ".mkv"]
     ALLOWED_IMAGE_EXTENSIONS: list[str] = [".jpg", ".jpeg", ".png", ".bmp"]
+    
+    # Model Configuration
+    INVERT_CLASS_MAPPING: bool = False  # If True, swap Class 0 and Class 1 (use if real videos detected as fake)
 
     @field_validator("ALLOWED_VIDEO_EXTENSIONS", "ALLOWED_IMAGE_EXTENSIONS", mode="before")
     @classmethod

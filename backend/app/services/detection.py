@@ -88,8 +88,9 @@ class DetectionService:
                 project_root = Path(__file__).parent.parent.parent.parent
                 model_path = project_root / model_path
             
-            # Run detection
-            result = pipeline.predict_video(str(temp_file_path), str(model_path), fps=fps)
+            # Run detection with class mapping config
+            invert_mapping = getattr(settings, 'INVERT_CLASS_MAPPING', False)
+            result = pipeline.predict_video(str(temp_file_path), str(model_path), fps=fps, invert_class_mapping=invert_mapping)
             
             # Check for errors in pipeline response
             if "error" in result:

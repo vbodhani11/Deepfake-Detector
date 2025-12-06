@@ -31,6 +31,7 @@ const UploadPage: React.FC = () => {
   const [analysisStatus, setAnalysisStatus] = useState('Uploading file...');
   const [elapsedTime, setElapsedTime] = useState(0);
   const [currentDetection, setCurrentDetection] = useState<DetectionRecord | null>(null);
+  const [videoError, setVideoError] = useState<string | null>(null);
 
   const simulateUploadProgress = (file: File) => {
     let progress = 0;
@@ -101,6 +102,7 @@ const UploadPage: React.FC = () => {
     });
 
     setErrorMessage(null);
+    setVideoError(null);
 
     // Check video duration and inform user if it will be trimmed
     if (file.type.startsWith('video/')) {
@@ -134,6 +136,13 @@ const UploadPage: React.FC = () => {
     // Generate preview for videos
     else if (file.type.startsWith('video/')) {
       const videoUrl = URL.createObjectURL(file);
+      const fileName = file.name.toLowerCase();
+      
+      // Check if it's an AVI file - browsers often can't play AVI codecs
+      if (fileName.endsWith('.avi')) {
+        setVideoError('AVI format preview may not work in this browser, but the video will be analyzed correctly.');
+      }
+      
       setUploadedFile(prev => (prev ? { 
         ...prev, 
         preview: videoUrl,
@@ -339,14 +348,34 @@ const UploadPage: React.FC = () => {
                       className='max-w-full max-h-64 mx-auto rounded-lg mb-6'
                     />
                   ) : uploadedFile.previewType === 'video' ? (
-                    <video
-                      src={uploadedFile.preview}
-                      controls
-                      className='max-w-full max-h-96 mx-auto rounded-lg mb-6'
-                      preload='metadata'
-                    >
-                      Your browser does not support the video tag.
-                    </video>
+                    <div className='relative'>
+                      <video
+                        src={uploadedFile.preview}
+                        controls
+                        className='max-w-full max-h-96 mx-auto rounded-lg mb-6'
+                        preload='metadata'
+                        onError={(e) => {
+                          const video = e.currentTarget;
+                          const fileName = uploadedFile.file.name.toLowerCase();
+                          if (fileName.endsWith('.avi')) {
+                            setVideoError('AVI format may not be playable in this browser. The video will still be analyzed correctly.');
+                          } else {
+                            setVideoError('Video format may not be supported in this browser. The video will still be analyzed correctly.');
+                          }
+                        }}
+                        onLoadedData={() => {
+                          setVideoError(null);
+                        }}
+                      >
+                        Your browser does not support the video tag.
+                      </video>
+                      {videoError && (
+                        <div className='bg-yellow-500/20 border border-yellow-500/50 rounded-lg p-4 mb-4 text-yellow-300 text-sm'>
+                          <p className='font-semibold mb-1'>⚠️ Preview Unavailable</p>
+                          <p>{videoError}</p>
+                        </div>
+                      )}
+                    </div>
                   ) : null}
                 </>
               )}

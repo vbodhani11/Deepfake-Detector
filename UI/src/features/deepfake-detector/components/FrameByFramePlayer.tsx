@@ -201,21 +201,15 @@ const FrameByFramePlayer: React.FC<FrameByFramePlayerProps> = ({
         <div className='grid grid-cols-8 sm:grid-cols-12 md:grid-cols-16 gap-2 max-h-64 overflow-y-auto'>
           {framePredictions.map((pred, idx) => {
             const isCurrent = pred.frame_index === currentFrameIndex;
+            const bgColorClass = getProbabilityBgColor(pred.fake_probability);
             return (
               <div
                 key={idx}
-                className={`relative aspect-square rounded-lg cursor-pointer transition-all ${
+                className={`relative aspect-square rounded-lg cursor-pointer transition-all ${bgColorClass} opacity-80 ${
                   isCurrent
-                    ? 'ring-2 ring-blue-400 scale-110 z-10'
-                    : 'hover:scale-105'
+                    ? 'ring-2 ring-blue-400 scale-110 z-10 opacity-100'
+                    : 'hover:scale-105 hover:opacity-100'
                 }`}
-                style={{
-                  backgroundColor: `rgba(${
-                    pred.fake_probability >= 0.5
-                      ? `${255 - (pred.fake_probability - 0.5) * 255 * 2}, 0, 0`
-                      : `0, ${pred.fake_probability * 255 * 2}, 0`
-                  }, 0.6)`,
-                }}
                 onClick={() => {
                   const video = videoRef.current;
                   if (video) {
