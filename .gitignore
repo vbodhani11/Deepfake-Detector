@@ -283,10 +283,6 @@ Thumbs.db
 *.backup
 *.old
 
-# PowerPoint files (if you don't want to track them)
-*.pptx
-*.ppt
-
 # Dependency directories
 node_modules/
 UI/node_modules/
